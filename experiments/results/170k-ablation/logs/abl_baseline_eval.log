@@ -1,0 +1,11 @@
+=== BASELINE BEST MODEL TEST MAE ===
+Device: cuda
+Loading frozen checkpoint from models/abl_baseline_170k/model_55.pth
+Test Loss: 224.18523451861213
+Loss by time control: {'ultrabullet': 223.1096068488227, 'bullet': 246.4892016325184, 'blitz': 210.13672513084427, 'rapid': 212.33829191361352, 'classical': 167.27072282270953}
+=== BASELINE TERMINAL (model_60) TEST MAE ===
+Device: cuda
+Loading frozen checkpoint from models/abl_baseline_170k/model_55.pth
+Test Loss: 228.9522202435662
+Loss by time control: {'ultrabullet': 227.2368418375651, 'bullet': 253.56263055643436, 'blitz': 213.79999209384826, 'rapid': 214.6521861163206, 'classical': 175.1654385653409}
+=== BASELINE EVAL DONE ===

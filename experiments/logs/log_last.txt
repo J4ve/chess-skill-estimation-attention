@@ -1,0 +1,15 @@
+[last] train=4320 val=1080 test=600
+[last] loaded in 43s
+[last] epoch  1 train_loss= 331.68 val_MAE= 306.67 (157s)
+[last] epoch  2 train_loss= 308.34 val_MAE= 310.02 (161s)
+[last] epoch  3 train_loss= 302.52 val_MAE= 300.56 (151s)
+[last] epoch  4 train_loss= 293.41 val_MAE= 300.67 (131s)
+[last] epoch  5 train_loss= 286.94 val_MAE= 292.55 (132s)
+[last] epoch  6 train_loss= 279.60 val_MAE= 297.51 (142s)
+[last] epoch  7 train_loss= 273.68 val_MAE= 288.73 (108s)
+[last] epoch  8 train_loss= 265.20 val_MAE= 302.65 (139s)
+[last] epoch  9 train_loss= 257.43 val_MAE= 306.34 (110s)
+[last] epoch 10 train_loss= 248.61 val_MAE= 294.87 (114s)
+[last] epoch 11 train_loss= 246.26 val_MAE= 292.31 (218s)
+[last] epoch 12 train_loss= 237.40 val_MAE= 296.32 (117s)
+[last] epoch 13 train_loss= 229.40 val_MAE= 308.14 (123s)

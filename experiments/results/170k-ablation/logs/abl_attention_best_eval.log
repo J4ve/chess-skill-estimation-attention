@@ -1,0 +1,6 @@
+=== ATTENTION BEST MODEL TEST MAE ===
+Device: cuda
+Loading frozen checkpoint from models/abl_attention_170k/model_55.pth
+Test Loss: 221.73424530029297
+Loss by time control: {'ultrabullet': 211.26537407769098, 'bullet': 239.51968258583986, 'blitz': 210.2572310050914, 'rapid': 214.17145096486274, 'classical': 176.31586941805753}
+=== ATTENTION BEST EVAL DONE ===

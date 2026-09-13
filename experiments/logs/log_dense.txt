@@ -1,0 +1,15 @@
+[dense] train=4320 val=1080 test=600
+[dense] loaded in 43s
+[dense] epoch  1 train_loss= 325.95 val_MAE= 314.56 (158s)
+[dense] epoch  2 train_loss= 302.74 val_MAE= 318.83 (158s)
+[dense] epoch  3 train_loss= 289.50 val_MAE= 306.05 (148s)
+[dense] epoch  4 train_loss= 278.62 val_MAE= 293.40 (129s)
+[dense] epoch  5 train_loss= 270.73 val_MAE= 292.01 (133s)
+[dense] epoch  6 train_loss= 263.35 val_MAE= 286.59 (141s)
+[dense] epoch  7 train_loss= 254.54 val_MAE= 275.95 (107s)
+[dense] epoch  8 train_loss= 249.69 val_MAE= 281.60 (138s)
+[dense] epoch  9 train_loss= 242.71 val_MAE= 286.10 (111s)
+[dense] epoch 10 train_loss= 237.35 val_MAE= 298.44 (108s)
+[dense] epoch 11 train_loss= 232.24 val_MAE= 288.44 (222s)
+[dense] epoch 12 train_loss= 226.42 val_MAE= 287.57 (116s)
+[dense] epoch 13 train_loss= 220.87 val_MAE= 277.92 (120s)

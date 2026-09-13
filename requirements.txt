@@ -1,9 +1,10 @@
-chess==1.10.0
-scikit-learn==1.3.2
 torch
-numpy
-pyyaml
+chess
 fastapi
 uvicorn
 python-multipart
+numpy
+scikit-learn
+pyyaml
 tensorboard
+zstandard

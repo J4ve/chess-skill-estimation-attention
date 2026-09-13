@@ -1,0 +1,13 @@
+kept=500 scanned=511
+kept=1000 scanned=1024
+kept=1500 scanned=1526
+kept=2000 scanned=2032
+kept=2500 scanned=2538
+kept=3000 scanned=3040
+kept=3500 scanned=3542
+kept=4000 scanned=4047
+kept=4500 scanned=4549
+kept=5000 scanned=5056
+kept=5500 scanned=5557
+kept=6000 scanned=6062
+DONE scanned=6062 kept=6000

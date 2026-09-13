@@ -36,7 +36,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from chess_rating_net import ChessEloPredictor
-from format_data import board_to_array, parse_game_for_inference, time_to_seconds
+from format_data import board_to_array, parse_game, time_to_seconds
 
 
 # Baseline normalization constants (must match training; see audit report).
@@ -77,6 +77,7 @@ def _discover_checkpoint() -> Path:
     candidates = [
         Path(__file__).resolve().parent.parent / "models" / "model_55.pth",
         Path("models") / "model_55.pth",
+        Path("prototype") / "models" / "model_55.pth",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -148,7 +149,7 @@ def _pgn_to_tensor_inputs(pgn_text: str):
     if game is None:
         raise ValueError("Could not parse PGN text")
 
-    game_info = parse_game_for_inference(game, max_plies=MAX_PLIES)
+    game_info = parse_game(game, max_plies=MAX_PLIES)
     if game_info is None:
         raise ValueError("PGN has no usable clock annotations")
 

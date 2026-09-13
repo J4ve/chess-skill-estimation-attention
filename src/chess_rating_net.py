@@ -23,8 +23,10 @@ import logging
 import os
 import pickle
 import random
+import sqlite3
 import sys
 import time
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +48,80 @@ from torch.utils.tensorboard import SummaryWriter
 
 from attention import BahdanauAttention, SelfAttention
 from anomaly import AnomalyDetector
-from format_data import board_to_array, categorize_time_control, time_to_seconds
+from format_data import board_to_array, categorize_time_control, rejected_games, time_to_seconds
 
 logger = logging.getLogger(__name__)
+
+
+class GameBlobStore:
+    """Read-only random-access store of per-game pickles, keyed by .pkl basename.
+
+    Backs training on the full corpus, where ~2.46M loose ``.pkl`` files (~500GB)
+    do not fit the NVMe scratch disk but the same games compressed individually
+    do (~11GB).  Built by ``build_corpus_store.py``; that module documents why
+    this format was chosen over the alternatives.
+
+    Safe under ``DataLoader(num_workers=N)``.  The SQLite connection is opened
+    lazily and keyed by pid, so a connection is never shared across a ``fork``,
+    and ``__getstate__`` drops it so the store also survives being pickled to
+    ``spawn``-ed workers.  The database is opened ``mode=ro&immutable=1``, which
+    tells SQLite the file cannot change and lets it skip locking entirely; that
+    is correct here because training only ever reads.  Never point this at a
+    store that is still being built.
+    """
+
+    FILENAME = "corpus.sqlite"
+
+    def __init__(self, path: str | Path):
+        self.path = str(path)
+        self._pid = None
+        self._con = None
+
+    @classmethod
+    def open_if_present(cls, data_dir: str) -> GameBlobStore | None:
+        """Return a store for ``data_dir`` if it holds one, else ``None``.
+
+        Keeps ``--data_dir`` backwards compatible: a directory of loose ``.pkl``
+        files still works exactly as before.
+        """
+        candidate = Path(data_dir) / cls.FILENAME
+        return cls(candidate) if candidate.exists() else None
+
+    def _uri(self) -> str:
+        return f"file:{self.path}?mode=ro&immutable=1"
+
+    def _connection(self) -> sqlite3.Connection:
+        pid = os.getpid()
+        if self._con is None or self._pid != pid:
+            self._con = sqlite3.connect(self._uri(), uri=True)
+            self._pid = pid
+        return self._con
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        state["_con"] = None
+        state["_pid"] = None
+        return state
+
+    def names(self) -> list[str]:
+        """Sorted ``.pkl`` basenames, the same list ``os.listdir`` used to give.
+
+        Uses a short-lived connection so the parent process does not hold one
+        open across the DataLoader's fork.
+        """
+        con = sqlite3.connect(self._uri(), uri=True)
+        try:
+            return [row[0] for row in con.execute("SELECT name FROM games ORDER BY name")]
+        finally:
+            con.close()
+
+    def load(self, name: str) -> dict[str, Any]:
+        row = self._connection().execute(
+            "SELECT blob FROM games WHERE name = ?", (name,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"game {name!r} not found in corpus store {self.path}")
+        return pickle.loads(zlib.decompress(row[0]))
 
 
 class ChessGamesDataset(Dataset):
@@ -62,8 +135,10 @@ class ChessGamesDataset(Dataset):
         ratings_std: float = 366,
         clocks_mean: float = 273,
         clocks_std: float = 380,
+        store: GameBlobStore | None = None,
     ):
         self.filenames = filenames
+        self.store = store
         self.max_moves = max_moves
         self.ratings_mean = ratings_mean
         self.ratings_std = ratings_std
@@ -74,8 +149,12 @@ class ChessGamesDataset(Dataset):
         return len(self.filenames)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        with open(self.filenames[idx], "rb") as f:
-            game_info = pickle.load(f)
+        name = self.filenames[idx]
+        if self.store is None:
+            with open(name, "rb") as f:
+                game_info = pickle.load(f)
+        else:
+            game_info = self.store.load(name)
         clocks = [time_to_seconds(c) for c in game_info.get("Clocks", [])]
         clocks = [(c - self.clocks_mean) / self.clocks_std for c in clocks]
         clocks = torch.tensor(clocks, dtype=torch.float)[: self.max_moves]
@@ -104,7 +183,7 @@ class ChessGamesDataset(Dataset):
             "white": white,
             "last_rating": last_rating,
             "result": result,
-            "game_id": Path(self.filenames[idx]).stem,
+            "game_id": Path(name).stem,
             "white_elo": white_elo,
             "black_elo": black_elo,
         }
@@ -187,10 +266,12 @@ class ChessEloPredictor(nn.Module):
         attention_type: str = "bahdanau",
         attention_dim: int = 64,
         use_anomaly: bool = False,
+        deeper_cnn: bool = False,
     ):
         super().__init__()
         self.use_attention = use_attention
         self.use_anomaly = use_anomaly
+        self.deeper_cnn = deeper_cnn
         self.bidirectional = bidirectional
         self.lstm_h = lstm_h
 
@@ -203,6 +284,18 @@ class ChessEloPredictor(nn.Module):
         self.bn3 = nn.BatchNorm2d(conv_filters * 4)
         self.conv4 = nn.Conv2d(conv_filters * 4, conv_filters * 8, kernel_size=3, padding=1)
         self.bn4 = nn.BatchNorm2d(conv_filters * 8)
+        # Optional extra conv at the 2x2 stage (Omori 2026-08-29: "add another
+        # layer and train on the gpu").  Same channel count as conv3, so the
+        # trunk output width and everything downstream (LSTM input, attention,
+        # rating head) are byte-identical to the baseline.  Placed here, before
+        # the third pool, because the feature map still has 2x2 spatial extent;
+        # conv4 already runs on a 1x1 map so stacking depth there would be
+        # degenerate.  Off by default -> forward pass unchanged.
+        self.conv3b: nn.Module | None = None
+        self.bn3b: nn.Module | None = None
+        if deeper_cnn:
+            self.conv3b = nn.Conv2d(conv_filters * 4, conv_filters * 4, kernel_size=3, padding=1)
+            self.bn3b = nn.BatchNorm2d(conv_filters * 4)
         self.pool = nn.AvgPool2d(2, 2)
         self.dropout1 = nn.Dropout(dropout_rate)
 
@@ -248,7 +341,7 @@ class ChessEloPredictor(nn.Module):
         """
         Returns:
             By default (return_attention=False): ``(per_move_preds, last_step_preds)``
-                identical to the baseline.
+                identical to the baseline when ``use_attention=False``.
             If return_attention=True: a dictionary with predictions, attention
                 weights, anomaly scores, and intermediate values.
         """
@@ -261,6 +354,8 @@ class ChessEloPredictor(nn.Module):
         x = F.leaky_relu(self.bn2(self.conv2(x)))
         x = self.pool(x)
         x = F.leaky_relu(self.bn3(self.conv3(x)))
+        if self.conv3b is not None:
+            x = F.leaky_relu(self.bn3b(self.conv3b(x)))
         x = self.pool(x)
         x = F.leaky_relu(self.bn4(self.conv4(x)))
         x = self.dropout1(x)
@@ -272,7 +367,34 @@ class ChessEloPredictor(nn.Module):
         packed_output, _ = self.lstm(packed_input)
         lstm_output, _ = pad_packed_sequence(packed_output, batch_first=True)
 
-        y = F.leaky_relu(self.fc1(lstm_output))
+        # --- Causal-cumulative attention (Fix 1) ---
+        # When use_attention=True, compute per-ply attended context and add it
+        # to the BiLSTM output before the rating head.  This makes attention
+        # part of the gradient path so its parameters are actually trained.
+        # When use_attention=False, this block is skipped and the forward pass
+        # is identical to the baseline (frozen checkpoint loads cleanly).
+        attention_weights = None
+        rating_input = lstm_output  # default: raw BiLSTM output
+        if self.attention is not None:
+            attn_context, attn_weights_raw = self.attention.forward_causal(
+                lstm_output, lengths
+            )
+            # Residual connection: preserves baseline signal while adding
+            # the attention-modulated context.
+            rating_input = lstm_output + attn_context
+            # Store per-ply weights for diagnostics / anomaly.  For Bahdanau
+            # the raw weights are (batch, seq, seq); collapse to (batch, seq)
+            # by taking the diagonal (each ply's self-weight is its importance)
+            # or, more usefully, the mean weight received across query positions.
+            if attn_weights_raw.dim() == 3:
+                # Bahdanau: (batch, seq_q, seq_k) → per-key importance
+                # Use mean over query dim (how much each key is attended to).
+                attention_weights = attn_weights_raw.mean(dim=1)
+            else:
+                # SelfAttention already returns (batch, seq) step_importance
+                attention_weights = attn_weights_raw
+
+        y = F.leaky_relu(self.fc1(rating_input))
         y = self.dropout1(y)
         per_move_preds = self.fc2(y)
 
@@ -281,13 +403,6 @@ class ChessEloPredictor(nn.Module):
 
         if not return_attention:
             return per_move_preds, last_time_step_output
-
-        # Build mask based on actual lengths
-        mask = torch.arange(sequence_length, device=positions.device).unsqueeze(0) < lengths.unsqueeze(1)
-
-        attention_weights = None
-        if self.attention is not None:
-            _, attention_weights = self.attention(lstm_output, mask=mask)
 
         anomaly_out = None
         if self.anomaly_detector is not None and baseline is not None:
@@ -332,17 +447,45 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     ratings_mean: float = 1514,
     ratings_std: float = 366,
+    dense_supervision: bool = False,
 ) -> float:
+    """Train for one epoch.
+
+    When ``dense_supervision`` is True (Fix 4), the loss is computed on
+    **every valid ply** (padding excluded) rather than only the last ply.
+    The rating label is constant across the game, so every ply is a valid
+    training target.  Evaluation remains last-ply-only.
+    """
     model.train()
     total_train_loss = 0.0
     for batch in train_loader:
         positions = batch["positions"].to(device)
         clocks = batch["clocks"].to(device)
-        targets = batch["targets"].to(device)
+        targets = batch["targets"].to(device)  # (batch, 2)
         lengths = batch["lengths"]
         optimizer.zero_grad()
-        _, outputs = model(positions, clocks, lengths)
-        loss = criterion(outputs * ratings_std + ratings_mean, targets * ratings_std + ratings_mean)
+        per_move_preds, last_step_preds = model(positions, clocks, lengths)
+
+        if dense_supervision:
+            # Expand targets to (batch, seq, 2) — same label for every ply.
+            batch_size, seq_len, _ = per_move_preds.shape
+            targets_expanded = targets.unsqueeze(1).expand(batch_size, seq_len, 2)
+            # Build a per-ply validity mask (batch, seq, 1) to exclude padding.
+            mask = (
+                torch.arange(seq_len, device=device).unsqueeze(0) < lengths.unsqueeze(1).to(device)
+            ).unsqueeze(-1).float()  # (batch, seq, 1)
+            # De-standardize before L1 so the loss is in Elo points.
+            preds_elo = per_move_preds * ratings_std + ratings_mean
+            targets_elo = targets_expanded * ratings_std + ratings_mean
+            # Masked mean: sum of valid-ply losses / number of valid plies.
+            elementwise_loss = torch.abs(preds_elo - targets_elo) * mask  # (batch, seq, 2)
+            loss = elementwise_loss.sum() / (mask.sum() * 2)  # mean over plies and sides
+        else:
+            loss = criterion(
+                last_step_preds * ratings_std + ratings_mean,
+                targets * ratings_std + ratings_mean,
+            )
+
         loss.backward()
         optimizer.step()
         total_train_loss += loss.item()
@@ -389,9 +532,12 @@ def test(
     """Evaluate on the test set.
 
     When ``per_game_csv`` is given, also dumps one row per game
-    (``game_id, white_err, black_err, time_control, white_elo, black_elo``)
-    with errors in Elo points, enabling paired-bootstrap, rating-bracket,
-    calibration, and move-index analyses downstream.
+    (``game_id, white_err, black_err, white_signed_err, black_signed_err,
+    time_control, white_elo, black_elo``) with errors in Elo points.
+    ``white_err``/``black_err`` are absolute errors; the ``*_signed_err``
+    columns carry the signed per-side error (predicted minus target) so the
+    paired-bootstrap difference and calibration/shrinkage analyses can be
+    computed downstream.
     """
     model.eval()
     total_test_loss = 0.0
@@ -403,7 +549,7 @@ def test(
     if per_game_csv is not None:
         csv_file = open(per_game_csv, "w", newline="", encoding="utf-8")
         csv_writer = csv.writer(csv_file)
-        csv_writer.writerow(["game_id", "white_err", "black_err", "time_control", "white_elo", "black_elo"])
+        csv_writer.writerow(["game_id", "white_err", "black_err", "white_signed_err", "black_signed_err", "time_control", "white_elo", "black_elo"])
 
     try:
         with torch.no_grad():
@@ -425,15 +571,18 @@ def test(
                         count_by_time_control[time_control] += 1
 
                 if csv_writer is not None:
-                    abs_errors = torch.abs(
+                    signed_errors = (
                         outputs * ratings_std + ratings_mean - targets * ratings_std - ratings_mean
-                    )  # (batch, 2) Elo points
+                    )  # (batch, 2) signed Elo points
+                    abs_errors = torch.abs(signed_errors)
                     for i, time_control in enumerate(time_controls):
                         csv_writer.writerow(
                             [
                                 batch["game_ids"][i],
                                 round(abs_errors[i, 0].item(), 4),
                                 round(abs_errors[i, 1].item(), 4),
+                                round(signed_errors[i, 0].item(), 4),
+                                round(signed_errors[i, 1].item(), 4),
                                 time_control,
                                 batch["white_elos"][i].item(),
                                 batch["black_elos"][i].item(),
@@ -557,6 +706,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default=None, help="Optional YAML config file to override defaults")
     parser.add_argument("--use_attention", action="store_true", help="Attach attention module to the model")
     parser.add_argument("--use_anomaly", action="store_true", help="Attach anomaly-detection branch")
+    parser.add_argument("--deeper_cnn", action="store_true", help="Insert conv3b (same-channel 3x3 conv + BN) at the 2x2 stage; trunk output and downstream dims unchanged")
     parser.add_argument("--val_batch_size", type=int, default=512, help="Validation/test batch size")
     parser.add_argument("--num_workers", type=int, default=4, help="DataLoader worker processes")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for torch/numpy/random and training shuffle (vary across seed-ablation runs)")
@@ -572,6 +722,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bidirectional", action=argparse.BooleanOptionalAction, default=True, help="Use bidirectional LSTM")
     parser.add_argument("--attention_type", default="bahdanau", choices=["bahdanau", "self"], help="Attention variant")
     parser.add_argument("--attention_dim", type=int, default=64, help="Bahdanau attention projection size")
+    parser.add_argument("--dense_supervision", action="store_true", default=False,
+                        help="Supervise every valid ply (not just the last) during training")
+    parser.add_argument("--ratings_mean", type=float, default=1514,
+                        help="Rating normalization mean. Default is the baseline paper's constant; "
+                             "do not change for the primary/comparable runs (see AGENTS.md).")
+    parser.add_argument("--ratings_std", type=float, default=366,
+                        help="Rating normalization std. Default is the baseline paper's constant; "
+                             "do not change for the primary/comparable runs (see AGENTS.md).")
     return parser
 
 
@@ -618,8 +776,12 @@ def main() -> int:
         "attention_type": args.attention_type,
         "attention_dim": args.attention_dim,
         "use_anomaly": args.use_anomaly,
+        "deeper_cnn": args.deeper_cnn,
+        "dense_supervision": args.dense_supervision,
         "seed": args.seed,
         "split_seed": args.split_seed,
+        "ratings_mean": args.ratings_mean,
+        "ratings_std": args.ratings_std,
     }
 
     data_dir = args.data_dir
@@ -629,22 +791,34 @@ def main() -> int:
     log_dir = Path("runs") / experiment_name
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    all_files = sorted(f for f in os.listdir(data_dir) if f.endswith(".pkl"))
-    if not all_files:
-        raise FileNotFoundError(f"No .pkl files found in {data_dir}")
+    store = GameBlobStore.open_if_present(data_dir)
+    if store is None:
+        all_files = sorted(f for f in os.listdir(data_dir) if f.endswith(".pkl"))
+        if not all_files:
+            raise FileNotFoundError(f"No .pkl files found in {data_dir}")
+    else:
+        all_files = store.names()
+        if not all_files:
+            raise FileNotFoundError(f"Corpus store {store.path} contains no games")
+        print(f"Corpus store: {store.path} ({len(all_files)} games)")
 
     train_names, val_names, test_names, manifest_hash = load_or_create_split(data_dir, all_files, args.split_seed)
-    train_files = [os.path.join(data_dir, f) for f in train_names]
-    val_files = [os.path.join(data_dir, f) for f in val_names]
-    test_files = [os.path.join(data_dir, f) for f in test_names]
+    if store is None:
+        train_files = [os.path.join(data_dir, f) for f in train_names]
+        val_files = [os.path.join(data_dir, f) for f in val_names]
+        test_files = [os.path.join(data_dir, f) for f in test_names]
+    else:
+        # the store is keyed by basename, so the names are already the keys
+        train_files, val_files, test_files = train_names, val_names, test_names
 
     print(f"Environment: data_dir={data_dir} files={len(all_files)} seed={args.seed} split_seed={args.split_seed}")
+    print(f"Rejected {rejected_games} games for zero/partial clock annotation (of {len(all_files)} parsed)")
     print(f"Split: train={len(train_files)} val={len(val_files)} test={len(test_files)} manifest_sha256={manifest_hash}")
     print(f"Resolved hyperparameters: {params}")
 
-    train_dataset = ChessGamesDataset(train_files)
-    val_dataset = ChessGamesDataset(val_files)
-    test_dataset = ChessGamesDataset(test_files)
+    train_dataset = ChessGamesDataset(train_files, ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"], store=store)
+    val_dataset = ChessGamesDataset(val_files, ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"], store=store)
+    test_dataset = ChessGamesDataset(test_files, ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"], store=store)
 
     train_loader = DataLoader(
         train_dataset,
@@ -683,6 +857,7 @@ def main() -> int:
         attention_type=params["attention_type"],
         attention_dim=params["attention_dim"],
         use_anomaly=params["use_anomaly"],
+        deeper_cnn=params.get("deeper_cnn", False),
     ).to(device)
 
     optimizer = torch.optim.Adam(
@@ -725,7 +900,11 @@ def main() -> int:
         saved_model = torch.load(best_path, map_location=device)
         model.load_base_state_dict(saved_model["model_state_dict"], strict=False)
         per_game_csv = model_dir / "per_game_errors.csv"
-        test_loss, loss_by_tc = test(model, test_loader, device, criterion, per_game_csv=str(per_game_csv))
+        test_loss, loss_by_tc = test(
+            model, test_loader, device, criterion,
+            ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"],
+            per_game_csv=str(per_game_csv),
+        )
         print("Test Loss:", test_loss)
         print("Loss by time control:", loss_by_tc)
         print(f"Wrote per-game errors to {per_game_csv}")
@@ -737,9 +916,16 @@ def main() -> int:
 
     for epoch in range(start_epoch, params["epochs"]):
         epoch_start = time.time()
-        train_loss = train_one_epoch(model, train_loader, device, criterion, optimizer)
+        train_loss = train_one_epoch(
+            model, train_loader, device, criterion, optimizer,
+            ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"],
+            dense_supervision=params.get("dense_supervision", False),
+        )
         print(f"Epoch {epoch + 1}, Train Loss: {train_loss:.4f}")
-        val_loss = validate(model, val_loader, device, criterion)
+        val_loss = validate(
+            model, val_loader, device, criterion,
+            ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"],
+        )
         print(f"Epoch {epoch + 1}, Validation Loss: {val_loss:.4f}")
         writer.add_scalar("Loss/Train", train_loss, epoch)
         writer.add_scalar("Loss/Validation", val_loss, epoch)

@@ -8,6 +8,8 @@ data/*.jsonl
 data/*.pkl
 
 # Runtime artifacts
+.venv/
+.bin/
 logs/
 runs/
 __pycache__/

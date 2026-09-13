@@ -1,0 +1,6 @@
+=== ATTENTION TERMINAL (model_60) TEST MAE ===
+Device: cuda
+Loading frozen checkpoint from models/abl_attention_170k/model_55.pth
+Test Loss: 228.462059469784
+Loss by time control: {'ultrabullet': 202.9384045071072, 'bullet': 251.77278077154966, 'blitz': 213.02902788527226, 'rapid': 219.74229019664222, 'classical': 168.60834780606356}
+=== ATTENTION TERMINAL EVAL DONE ===

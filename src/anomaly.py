@@ -5,6 +5,17 @@ The module computes a per-move deviation signal between the move-by-move
 predicted rating curve and an established player baseline, then weights each
 deviation by the attention weight produced by the attention module. Both
 per-move and aggregated suspicion scores are exposed.
+
+**R_baseline definition (Fix 2).** At inference, ``R_baseline`` is the
+player's known pre-game Lichess Glicko-2 rating for the relevant time
+control.  It can be supplied explicitly by the caller (e.g. from the PGN
+headers or from a ``rating_after_last_game`` field), or — when unavailable —
+it falls back to the model's own final-ply predicted rating (see
+``api.py``).  Both ``predictions`` and ``baseline`` **must** be on the
+original Elo scale (roughly 400–3000+), not the standardized scale used
+internally during training (mean ≈ 0, std ≈ 1).  A unit-scale assertion
+guards against accidental mixing of the two conventions, which would change
+the suspicion score by a factor of ~366.
 """
 
 import torch
@@ -21,10 +32,23 @@ class AnomalyDetector(nn.Module):
     attention module; when attention is disabled or unavailable a uniform weight
     of 1 / seq_length is used so the aggregate reduces to the mean deviation.
 
+    .. important::
+
+       Both ``predictions`` and ``baseline`` must be on the **original Elo
+       scale** (typical range 400–3000+).  Passing standardized values
+       (z-scored, roughly −4 to +4) will trigger an ``AssertionError``.  The
+       API layer (``api.py``) already de-standardizes predictions before
+       calling this module; the guard exists to prevent silent misuse at the
+       module level.
+
     Args:
         normalize: If True, divide the aggregate score by the sum of attention
             weights (softmax already sums to 1, so this is a safety no-op).
     """
+
+    # Minimum plausible |baseline| value on the original Elo scale.
+    # Real Elo values are 400–3000+; standardized values are ~±4.
+    _ELO_SCALE_FLOOR = 100.0
 
     def __init__(self, normalize: bool = True):
         super().__init__()
@@ -38,8 +62,9 @@ class AnomalyDetector(nn.Module):
     ) -> dict[str, torch.Tensor]:
         """
         Args:
-            predictions: (batch, seq, 2) standardized or original-scale ratings.
-            baseline: (batch, 2) established baseline rating for white and black.
+            predictions: (batch, seq, 2) **original-scale** (Elo-point) ratings.
+            baseline: (batch, 2) established baseline rating for white and black,
+                on the **original Elo scale**.
             attention_weights: Optional (batch, seq) attention weights. If None,
                 uniform weights are used.
 
@@ -52,7 +77,22 @@ class AnomalyDetector(nn.Module):
                 - "white_score": (batch,) aggregated suspicion for white
                 - "black_score": (batch,) aggregated suspicion for black
                 - "combined_score": (batch,) sum of white and black scores
+
+        Raises:
+            AssertionError: If ``baseline`` values appear to be on the
+                standardized scale (all |values| < 100), indicating a
+                unit-scale mismatch that would silently produce scores
+                ~366× too small.
         """
+        # --- Unit-scale guard (Fix 2) ---
+        assert baseline.abs().max().item() > self._ELO_SCALE_FLOOR, (
+            f"AnomalyDetector expects baseline on the original Elo scale "
+            f"(typical range 400–3000), but received max |baseline| = "
+            f"{baseline.abs().max().item():.2f}, which looks like standardized "
+            f"values.  De-standardize with `baseline * ratings_std + ratings_mean` "
+            f"before calling this module."
+        )
+
         batch, seq, _ = predictions.shape
         baseline = baseline.unsqueeze(1)  # (batch, 1, 2)
         per_move_deviation = torch.abs(predictions - baseline)  # (batch, seq, 2)
@@ -80,3 +120,4 @@ class AnomalyDetector(nn.Module):
             "combined_score": white_score + black_score,
             "attention_weights": attention_weights,
         }
+

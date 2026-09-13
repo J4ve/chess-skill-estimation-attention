@@ -1,0 +1,12 @@
+Device: cuda
+Resuming from models/abl_attention_170k/latest.pth
+Training model
+Epoch 59, Train Loss: 183.8428
+Epoch 59, Validation Loss: 228.4919
+Saved epoch checkpoint models/abl_attention_170k/model_59.pth
+Epoch 60, Train Loss: 183.5491
+Epoch 60, Validation Loss: 228.7250
+Saved epoch checkpoint models/abl_attention_170k/model_60.pth
+Training duration (min): 70.32384200890858
+best val loss: 223.14870223999023
+best val epoch: 0
