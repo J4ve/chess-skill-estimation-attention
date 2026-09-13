@@ -151,10 +151,17 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path
 
     # Serve the architecture recorded in the checkpoint's own params, with
     # defaults matching the plain baseline for older checkpoints that lack a
-    # key. This lets both the frozen thesis checkpoint (attention, anomaly,
-    # deeper CNN all enabled) and the plain baseline load with their weights
-    # applied exactly, instead of leaving randomly initialized modules that
-    # would silently corrupt every prediction.
+    # key. This lets both the frozen thesis checkpoint (attention enabled;
+    # deeper_cnn absent, so off) and the plain baseline load with their
+    # weights applied exactly, instead of leaving randomly initialized
+    # modules that would silently corrupt every prediction.
+    use_attention = params.get("use_attention", False)
+    # AnomalyDetector has no learnable parameters (pure post-hoc arithmetic
+    # over the rating curve and attention weights), and load_base_state_dict
+    # already skips anomaly_detector.* keys, so it is always safe to build
+    # one whenever attention is enabled, even if the checkpoint itself was
+    # saved with use_anomaly=False.
+    use_anomaly = params.get("use_anomaly", False) or use_attention
     model = ChessEloPredictor(
         conv_filters=params.get("conv_filters", 32),
         lstm_layers=params.get("lstm_layers", 3),
@@ -162,10 +169,10 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path
         lstm_h=params.get("lstm_h", 64),
         fc1_h=params.get("fc1_h", 32),
         bidirectional=params.get("bidirectional", True),
-        use_attention=params.get("use_attention", False),
+        use_attention=use_attention,
         attention_type=params.get("attention_type", "bahdanau"),
         attention_dim=params.get("attention_dim", 64),
-        use_anomaly=params.get("use_anomaly", False),
+        use_anomaly=use_anomaly,
         deeper_cnn=params.get("deeper_cnn", False),
     ).to(device)
 
