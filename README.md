@@ -38,12 +38,18 @@ Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_th
 
 ## Frozen weights
 
-The released baseline checkpoint (`model_55.pth`, Option C "both" weight
-strategy) is required for inference. It is **not committed** to git (see
+The API serves the frozen thesis checkpoint by default: `models/preflight_check_2m/best_model.pth`,
+the tuned attention arm (test MAE 171.92). It is **not committed** to git (see
 `.gitignore`).
 
-- Expected location: `models/model_55.pth`
-- Download: [Google Drive folder](https://drive.google.com/drive/folders/164qXisHsNAKSM6R7ZMeTeJjPpnZ7s5Rt)
+- Expected location: `models/preflight_check_2m/best_model.pth`
+- Override: set `RATINGNET_CHECKPOINT` to load an exact path instead.
+- Fallback: if the frozen thesis checkpoint is not found and no override is
+  set, the API falls back to Omori's released baseline checkpoint
+  (`model_55.pth`, Option C "both" weight strategy) and logs a warning, since
+  that checkpoint has no attention or anomaly branch.
+  - Expected location: `models/model_55.pth`
+  - Download: [Google Drive folder](https://drive.google.com/drive/folders/164qXisHsNAKSM6R7ZMeTeJjPpnZ7s5Rt)
 
 ## Quick start (inference API)
 
@@ -54,8 +60,9 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Copy the frozen weights into place
-cp /path/to/model_55.pth models/model_55.pth
+# Copy the frozen thesis checkpoint into place
+mkdir -p models/preflight_check_2m
+cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
 
 # Start the FastAPI service
 python src/api.py

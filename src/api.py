@@ -2,9 +2,16 @@
 FastAPI inference service for the RatingNet prototype.
 
 The service imports model classes directly (no shelling out to
-``python src/chess_rating_net.py``), loads the frozen ``model_55.pth``
-checkpoint once at startup, and exposes a PGN upload/text endpoint that
-returns per-move rating predictions and attention weights.
+``python src/chess_rating_net.py``) and loads a checkpoint once at startup,
+then exposes a PGN upload/text endpoint that returns per-move rating
+predictions and attention weights.
+
+By default it serves the frozen thesis checkpoint
+(``models/preflight_check_2m/best_model.pth``, the tuned attention arm).
+Set ``RATINGNET_CHECKPOINT`` to load an exact path instead. If the thesis
+checkpoint is not found and no override is set, it falls back to Omori's
+released baseline (``model_55.pth``) and logs a warning, since that
+checkpoint has no attention or anomaly branch.
 
 Predictions and attention weights are logged to ``logs/predictions.jsonl``
 for reproducibility and fairness-review audit trails.
@@ -49,6 +56,7 @@ MAX_PLIES = 100
 MODEL: ChessEloPredictor | None = None
 MODEL_PARAMS: dict[str, Any] | None = None
 DEVICE: torch.device | None = None
+CHECKPOINT_PATH: Path | None = None
 
 # Lightweight cache: keyed by (white_name, black_name, pgn_hash) -> result.
 RESULT_CACHE: dict[str, Any] = {}
@@ -72,33 +80,81 @@ def _log_prediction(payload: dict[str, Any]) -> None:
         f.write(json.dumps(record, default=str) + "\n")
 
 
-def _discover_checkpoint() -> Path:
-    """Return the canonical frozen-weight path, checking common locations."""
+# The frozen thesis checkpoint: the tuned-attention arm (test MAE 171.92),
+# preferred over Omori's plain baseline whenever it is available.
+FROZEN_CHECKPOINT_REL = Path("models") / "preflight_check_2m" / "best_model.pth"
+# Omori's released baseline: no attention, no anomaly branch. Only served
+# when the frozen thesis checkpoint above cannot be found.
+BASELINE_CHECKPOINT_REL = Path("models") / "model_55.pth"
+
+
+def _find_checkpoint(relative: Path) -> Path | None:
+    """Search the standard candidate roots for ``relative``, or return None."""
     candidates = [
-        Path(__file__).resolve().parent.parent / "models" / "model_55.pth",
-        Path("models") / "model_55.pth",
-        Path("prototype") / "models" / "model_55.pth",
+        _SRC_DIR.parent / relative,
+        Path(relative),
+        Path("prototype") / relative,
     ]
     for candidate in candidates:
         if candidate.exists():
             return candidate.resolve()
-    raise FileNotFoundError("Frozen checkpoint model_55.pth not found. Place it at models/model_55.pth.")
+    return None
 
 
-def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device]:
-    """Load the frozen checkpoint once and build the model from its stored params."""
+def _discover_checkpoint() -> Path:
+    """Return the checkpoint path to serve.
+
+    Resolution order:
+    1. ``RATINGNET_CHECKPOINT`` env var, if set. Loaded exactly as given;
+       raises if the file does not exist (never silently falls back).
+    2. The frozen thesis checkpoint (``FROZEN_CHECKPOINT_REL``).
+    3. Omori's baseline ``model_55.pth``, with a logged warning that the
+       thesis model is not being served.
+    """
+    override = os.environ.get("RATINGNET_CHECKPOINT")
+    if override:
+        override_path = Path(override)
+        if not override_path.exists():
+            raise FileNotFoundError(
+                f"RATINGNET_CHECKPOINT is set to '{override_path}', but that file does not exist."
+            )
+        return override_path.resolve()
+
+    frozen = _find_checkpoint(FROZEN_CHECKPOINT_REL)
+    if frozen is not None:
+        return frozen
+
+    baseline = _find_checkpoint(BASELINE_CHECKPOINT_REL)
+    if baseline is not None:
+        logging.warning(
+            "Frozen thesis checkpoint (%s) not found; falling back to Omori's "
+            "baseline model_55.pth. This serves the plain baseline model, not "
+            "the thesis attention model.",
+            FROZEN_CHECKPOINT_REL,
+        )
+        return baseline
+
+    raise FileNotFoundError(
+        "No checkpoint found. Set RATINGNET_CHECKPOINT to an exact path, or "
+        f"place the frozen thesis checkpoint at {FROZEN_CHECKPOINT_REL} "
+        f"(preferred) or the baseline at {BASELINE_CHECKPOINT_REL}."
+    )
+
+
+def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path]:
+    """Load the discovered checkpoint once and build the model from its stored params."""
     checkpoint_path = _discover_checkpoint()
-    logging.info("Loading frozen checkpoint from %s", checkpoint_path)
+    logging.info("Loading checkpoint from %s", checkpoint_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     saved = torch.load(checkpoint_path, map_location=device, weights_only=False)
     params = saved["params"]
 
-    # Serve the architecture recorded in the checkpoint. The baseline
-    # model_55.pth carries no attention/anomaly parameters, so both default to
-    # False and the served model matches the loaded weights exactly. Enable
-    # them (via the checkpoint's stored params) only once a trained
-    # attention/anomaly checkpoint is being served; otherwise randomly
-    # initialized modules would silently corrupt every prediction.
+    # Serve the architecture recorded in the checkpoint's own params, with
+    # defaults matching the plain baseline for older checkpoints that lack a
+    # key. This lets both the frozen thesis checkpoint (attention, anomaly,
+    # deeper CNN all enabled) and the plain baseline load with their weights
+    # applied exactly, instead of leaving randomly initialized modules that
+    # would silently corrupt every prediction.
     model = ChessEloPredictor(
         conv_filters=params.get("conv_filters", 32),
         lstm_layers=params.get("lstm_layers", 3),
@@ -110,20 +166,22 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device]:
         attention_type=params.get("attention_type", "bahdanau"),
         attention_dim=params.get("attention_dim", 64),
         use_anomaly=params.get("use_anomaly", False),
+        deeper_cnn=params.get("deeper_cnn", False),
     ).to(device)
 
     model.load_base_state_dict(saved["model_state_dict"], strict=False)
     model.eval()
     logging.info("Model loaded on %s", device)
-    return model, params, device
+    return model, params, device, checkpoint_path
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup hook: load the model once and keep it in memory."""
-    global MODEL, MODEL_PARAMS, DEVICE
+    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH
     _setup_logging()
-    MODEL, MODEL_PARAMS, DEVICE = _load_model()
+    MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH = _load_model()
+    logging.info("Serving checkpoint: %s", CHECKPOINT_PATH)
     yield
     MODEL = None
 
@@ -204,7 +262,7 @@ def _run_inference(
     baseline = torch.tensor([[white_baseline, black_baseline]], dtype=torch.float)
 
     # Anomaly scoring is only available when the served checkpoint has an anomaly
-    # branch. The baseline model_55.pth does not, so emit neutral scores there.
+    # branch. Omori's baseline model_55.pth does not, so emit neutral scores there.
     seq_len = per_move_preds.size(0)
     if MODEL.anomaly_detector is not None:
         # Compute anomaly scores using the attention-weighted deviation formula.
@@ -260,6 +318,7 @@ async def health():
         "status": "ok",
         "device": str(DEVICE),
         "model_loaded": MODEL is not None,
+        "checkpoint_path": str(CHECKPOINT_PATH) if CHECKPOINT_PATH is not None else None,
     }
 
 
