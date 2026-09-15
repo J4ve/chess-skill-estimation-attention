@@ -1324,17 +1324,21 @@ input:focus {
 
 /* --- Suspicion ------------------------------------------------------------- */
 
+/* One grid for both rows (rows use display: contents) so the chip and
+   value columns size to the widest entry and stay aligned. */
 .suspicion-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px var(--space-2);
+}
+
+.suspicion-section > .card-head {
+  grid-column: 1 / -1;
 }
 
 .suspicion-bar-row {
-  display: grid;
-  grid-template-columns: 64px 118px 52px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2);
+  display: contents;
 }
 
 .suspicion-label {
@@ -1742,8 +1746,8 @@ input:focus {
 }
 
 @media (max-width: 520px) {
-  .suspicion-bar-row {
-    grid-template-columns: 56px minmax(0, 1fr) 48px;
+  .suspicion-section {
+    grid-template-columns: max-content max-content minmax(0, 1fr);
   }
 
   .suspicion-scale-wrap {
