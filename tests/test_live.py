@@ -462,3 +462,64 @@ def test_stream_tv_seeds_from_export_and_follows_moves():
     assert len(update_events) == 2
     assert all(p["result"]["lichess_game_id"] == "wxyz9876" for p in update_events)
     assert payloads[-1]["type"] == "error"
+
+
+def test_stream_tv_reports_custom_position_game_and_waits_for_next_featured():
+    from_position_pgn = (
+        '[Event "Rated Rapid Arena"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n'
+        '[Variant "From Position"]\n[SetUp "1"]\n'
+        '[FEN "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1"]\n\n'
+        "1. Nf3 {[%clk 0:05:00]} *"
+    )
+    tv_feed = [
+        {"t": "featured", "d": {"id": "thema001", "players": [], "fen": "x"}},
+        {"t": "fen", "d": {"fen": "y", "lm": "b8c6", "wc": 55, "bc": 57}},
+        {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
+    ]
+    call_count = {"n": 0}
+
+    def handler(request):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return httpx.Response(200, text=_ndjson(*tv_feed))
+        return httpx.Response(404)
+
+    async def fake_fetch_export(game_id):
+        return from_position_pgn if game_id == "thema001" else FIXTURE_PGN
+
+    async def body_coro():
+        async with _mock_client(handler) as client:
+            return [chunk async for chunk in stream_tv(fake_fetch_export, _fake_run_inference, 5, 10, 100, client=client)]
+
+    payloads = [json.loads(e[len("data: ") :].strip()) for e in run(body_coro())]
+    unsupported = [p for p in payloads if p.get("state") == "unsupported"]
+    assert len(unsupported) == 1
+    assert "custom position or variant" in unsupported[0]["message"]
+    update_ids = [p["result"]["lichess_game_id"] for p in payloads if p["type"] == "update"]
+    assert update_ids == ["wxyz9876"]
+
+
+@pytest.mark.parametrize(
+    "variant_headers",
+    [
+        '[Variant "From Position"]\n[SetUp "1"]\n[FEN "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1"]\n',
+        '[Variant "Chess960"]\n[SetUp "1"]\n[FEN "nbbrknrq/pppppppp/8/8/8/8/PPPPPPPP/NBBRKNRQ w KQkq - 0 1"]\n',
+    ],
+)
+def test_live_stream_endpoint_sends_custom_position_error_as_sse_event(monkeypatch, variant_headers):
+    import api
+
+    pgn = f'[Event "Arena"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n{variant_headers}\n1. Nf3 {{[%clk 0:05:00]}} *'
+
+    async def fake_fetch(game_id):
+        return pgn
+
+    monkeypatch.setattr(api, "fetch_game_pgn", fake_fetch)
+
+    async def body_coro():
+        return [chunk async for chunk in api._live_stream_game_events("bhjiWekv", 5, 10, None, None)]
+
+    payloads = [json.loads(e[len("data: ") :].strip()) for e in run(body_coro())]
+    assert len(payloads) == 1
+    assert payloads[0]["type"] == "error"
+    assert "custom position or variant" in payloads[0]["detail"]

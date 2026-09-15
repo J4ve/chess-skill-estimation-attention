@@ -34,7 +34,7 @@ import chess
 import chess.pgn
 import httpx
 
-from format_data import game_setup_error, parse_game
+from format_data import NON_STANDARD_GAME_MESSAGE, game_setup_error, parse_game
 
 USER_AGENT = "RatingNet-Prototype/0.1 (+https://github.com/J4ve/RatingNet)"
 STREAM_GAME_URL_TEMPLATE = "https://lichess.org/api/stream/game/{game_id}"
@@ -386,12 +386,25 @@ async def stream_tv(
                         try:
                             export_pgn = await fetch_export_pgn_fn(current_game_id)
                             prefix.seed_from_pgn(export_pgn)
-                        except Exception:
-                            # Either the export just isn't available yet (fine: we'll catch
-                            # up move by move from the live feed) or this is a non-standard
-                            # game (e.g. a variant slipping into a "standard" TV channel);
-                            # the add_move guard below will catch the latter case too.
-                            pass
+                        except Exception as exc:
+                            if isinstance(exc, ValueError) and str(exc) == NON_STANDARD_GAME_MESSAGE:
+                                # A custom-position or variant game on TV: nothing to score,
+                                # so say why and wait for the next "featured" switch.
+                                prefix = None
+                                yield sse_event(
+                                    {
+                                        "type": "status",
+                                        "state": "unsupported",
+                                        "message": (
+                                            f"TV game {current_game_id}: {NON_STANDARD_GAME_MESSAGE} "
+                                            "Waiting for the next TV game..."
+                                        ),
+                                    }
+                                )
+                                continue
+                            # Otherwise the export just isn't available yet (fine: we'll
+                            # catch up move by move from the live feed); a variant that
+                            # slipped past the headers is caught by the add_move guard below.
                         seen_ply_events = prefix.ply_count
                         yield sse_event(
                             {
