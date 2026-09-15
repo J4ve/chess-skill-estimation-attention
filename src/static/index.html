@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RatingNet Prototype</title>
+  <link rel="stylesheet" href="/static/vendor/chessboard-js/chessboard-1.0.0.min.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>RatingNet Prototype</h1>
+    <p class="subtitle">
+      Real-time chess skill estimation and anomaly detection for human fair-play review.
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="input-panel" aria-label="Game input">
+      <div class="tabs" role="tablist">
+        <button class="tab-button active" data-tab="paste" role="tab" aria-selected="true">Paste PGN</button>
+        <button class="tab-button" data-tab="upload" role="tab" aria-selected="false">Upload PGN</button>
+        <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess game</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="paste">
+        <label for="pgn-text">PGN text (must include [%clk ...] annotations)</label>
+        <textarea id="pgn-text" rows="8" placeholder="[Event &quot;Example&quot;]&#10;[WhiteElo &quot;1500&quot;]&#10;[BlackElo &quot;1500&quot;]&#10;&#10;1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} ..."></textarea>
+      </div>
+
+      <div class="tab-panel" data-panel="upload">
+        <label for="pgn-file">PGN file (.pgn)</label>
+        <input type="file" id="pgn-file" accept=".pgn,text/plain" />
+      </div>
+
+      <div class="tab-panel" data-panel="lichess">
+        <label for="lichess-id">Lichess game ID or URL</label>
+        <input type="text" id="lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
+      </div>
+
+      <fieldset class="baseline-inputs">
+        <legend>Optional overrides</legend>
+        <div class="field-row">
+          <label for="white-baseline">White baseline rating</label>
+          <input type="number" id="white-baseline" placeholder="from PGN header if left blank" />
+        </div>
+        <div class="field-row">
+          <label for="black-baseline">Black baseline rating</label>
+          <input type="number" id="black-baseline" placeholder="from PGN header if left blank" />
+        </div>
+        <div class="field-row">
+          <label for="top-k">Critical moves per side</label>
+          <input type="number" id="top-k" value="5" min="1" max="20" />
+        </div>
+      </fieldset>
+
+      <button id="submit-button" class="primary-button">Analyze game</button>
+      <p id="error-message" class="error-message" hidden></p>
+    </section>
+
+    <section class="results-panel" id="results-panel" hidden aria-label="Analysis results">
+      <div class="results-header">
+        <div class="player-cards">
+          <div class="player-card">
+            <span class="player-color">White</span>
+            <span class="player-name" id="white-name">-</span>
+            <span class="player-rating" id="white-rating">-</span>
+          </div>
+          <div class="player-card">
+            <span class="player-color">Black</span>
+            <span class="player-name" id="black-name">-</span>
+            <span class="player-rating" id="black-rating">-</span>
+          </div>
+        </div>
+        <span id="provisional-badge" class="provisional-badge" hidden>Provisional (game ongoing)</span>
+      </div>
+
+      <div id="warnings-box" class="warnings-box" hidden></div>
+
+      <div class="suspicion-section">
+        <p class="suspicion-caption">
+          Suspicion score is a supplementary flag for human review, not proof of cheating.
+        </p>
+        <div class="suspicion-bar-row">
+          <span class="suspicion-label">White</span>
+          <div class="suspicion-bar-track"><div id="white-suspicion-bar" class="suspicion-bar-fill"></div></div>
+          <span id="white-suspicion-value" class="suspicion-value">-</span>
+          <span id="white-baseline-source" class="baseline-source-tag">-</span>
+        </div>
+        <div class="suspicion-bar-row">
+          <span class="suspicion-label">Black</span>
+          <div class="suspicion-bar-track"><div id="black-suspicion-bar" class="suspicion-bar-fill"></div></div>
+          <span id="black-suspicion-value" class="suspicion-value">-</span>
+          <span id="black-baseline-source" class="baseline-source-tag">-</span>
+        </div>
+      </div>
+
+      <div class="chart-section">
+        <canvas id="rating-chart" height="220"></canvas>
+      </div>
+
+      <div class="board-and-critical">
+        <div class="board-section">
+          <div id="board" class="chessboard"></div>
+          <div class="board-controls">
+            <button id="step-start" title="Go to start">&laquo;</button>
+            <button id="step-back" title="Previous move">&lsaquo;</button>
+            <span id="ply-indicator">ply 0 / 0</span>
+            <button id="step-forward" title="Next move">&rsaquo;</button>
+            <button id="step-end" title="Go to end">&raquo;</button>
+          </div>
+          <p id="current-move-label" class="current-move-label"></p>
+        </div>
+
+        <div class="critical-moves-section">
+          <h2>Critical moves</h2>
+          <p class="critical-moves-caption">
+            Ranked by attention weight &times; rating deviation per side. Click a move to jump the board there.
+          </p>
+          <ol id="critical-moves-list" class="critical-moves-list"></ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>
+      RatingNet prototype. Suspicion scores and critical moves are a review aid for a human
+      fair-play reviewer, not an automated verdict.
+    </p>
+  </footer>
+
+  <script src="/static/vendor/jquery/jquery.min.js"></script>
+  <script src="/static/vendor/chessboard-js/chessboard-1.0.0.min.js"></script>
+  <script src="/static/vendor/chartjs/chart.umd.js"></script>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
