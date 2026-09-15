@@ -12,21 +12,23 @@ This thesis develops a deep-learning system that estimates a chess player's skil
 
 This is Objective 3 of the thesis: a real-time, web-based prototype that
 surfaces per-move ratings, suspicion scores, and critical moves to a human
-fair-play reviewer, taking a PGN upload or a Lichess game identifier as
-input.
+fair-play reviewer, taking a PGN upload, a Lichess game identifier, a
+built-in sample game, or a live ongoing Lichess game as input.
 
 - **Model** (`src/chess_rating_net.py`, `src/attention.py`, `src/anomaly.py`):
   a CNN-BiLSTM rating estimator with causal-cumulative Bahdanau attention and
   an attention-weighted anomaly-detection branch. The API serves the frozen
   thesis checkpoint by default: the tuned-attention arm, test MAE 171.92 (see
   "Frozen weights" below).
-- **FastAPI service** (`src/api.py`): PGN text, PGN upload, and Lichess
-  game-ID endpoints; per-side baseline resolution with a reported source;
-  a ranked `critical_moves` list for fast reviewer triage; clean 4xx errors
-  instead of a bare 500 for bad input.
+- **FastAPI service** (`src/api.py`, `src/live.py`): PGN text, PGN upload,
+  and Lichess game-ID endpoints; per-side baseline resolution with a
+  reported source; a ranked `critical_moves` list for fast reviewer triage;
+  clean 4xx errors instead of a bare 500 for bad input; and two
+  Server-Sent-Events endpoints that follow a Lichess game (or Lichess TV)
+  move by move (see "Live mode" below).
 - **Web prototype** (`src/static/`): a no-build-step HTML/CSS/JS page served
-  by the same FastAPI app, covering both required input modes (PGN and
-  Lichess ID). Results render as a Lichess-style analysis board: a
+  by the same FastAPI app, covering PGN, Lichess ID, sample games, and live
+  input modes. Results render as a Lichess-style analysis board: a
   chessboard with player bars, a two-column move list, a per-move metrics
   panel, and a full-width rating chart synced to the current ply. See "Web
   prototype" below.
@@ -91,20 +93,19 @@ curl -X POST http://localhost:8000/predict/lichess \
 
 `src/static/` is a static, no-build-step page (plain HTML/CSS/JS) served by
 FastAPI's `StaticFiles` at `/static`, with `GET /` returning `index.html`
-directly. It covers the two input modes committed for this stage of the
-thesis (PGN upload/paste and a Lichess game identifier); move-by-move live
-streaming of an ongoing game is a later step, not implemented here (see
-"Limitations").
+directly.
 
-The page has three input tabs (paste PGN, upload a `.pgn` file, or enter a
-Lichess game ID/URL), optional per-side baseline, critical-move top-k, and
-min-ply overrides. Once a game is analyzed, the input form collapses (click
-its header to reopen it for a new game) and a Lichess-style analysis board
-takes over: a chessboard with a player bar above and below showing each
-side's baseline and current rating estimate, a move list in Lichess's
-two-column style, a per-move metrics panel, and a rating chart across the
-full width with a marker that follows the current ply. See "Using the
-analysis board" below for controls.
+The page has five input tabs: paste PGN, upload a `.pgn` file, enter a
+Lichess game ID/URL, pick a **sample game** (see "Sample games" below), or
+watch a game **live** (see "Live mode" below); plus optional per-side
+baseline, critical-move top-k, and min-ply overrides shared across tabs.
+Once a game is analyzed, the input form collapses (click its header to
+reopen it for a new game) and a Lichess-style analysis board takes over: a
+chessboard with a player bar above and below showing each side's baseline
+and current rating estimate, a move list in Lichess's two-column style, a
+per-move metrics panel, and a rating chart across the full width with a
+marker that follows the current ply. See "Using the analysis board" below
+for controls.
 
 ### Using the analysis board
 
@@ -148,11 +149,91 @@ excluding plies before a minimum ply (default 10, configurable per request;
 see "API reference") since the model has little context in the opening and
 early plies would otherwise dominate the list.
 
+### Sample games
+
+The "Sample games" tab loads and analyzes a game in one click, reusing the
+same analysis board as every other input mode. Cards are grouped by
+`src/static/samples/manifest.json`'s `group` field:
+
+- **Rating: Bullet / Blitz / Rapid** - for each time control, a
+  best-predicted, typical, and worst-predicted game, picked by this
+  checkpoint's held-out test error (`analysis/heldout_test_eval/`), not by
+  outcome or player identity. This is an honest spread, not a highlight
+  reel: the worst-predicted games are shown because the model does worse on
+  them, most often master-strength games underrepresented in the training
+  distribution or very short/aborted games. Descriptions only ever
+  characterize level and time control; they never call out a specific
+  player. Source games are real, finished, public Lichess games (CC0, no
+  rights reserved), so usernames in the PGN headers are real and unchanged,
+  but nothing in this tab or its descriptions labels any player's games as
+  suspicious.
+- **Synthetic anomaly: caught / false alarm / missed** - three games from
+  this project's own synthetic anomaly corpus (a Maia policy network's
+  moves with some fraction substituted for a stronger engine's,
+  `src/generate_anomaly_corpus.py`), one from each outcome bucket at the
+  suspicion-score threshold used in thesis evaluation. These games are
+  synthetic end to end (no real player), and each substituted ply is known
+  ground truth: it renders as a small square marker on the move list and
+  the rating chart (next to the existing critical-move star/ring markers),
+  and the panel above the board shows the substitution rate, the Maia
+  rating band, the substitution engine, and this game's saved suspicion
+  score (`S_att`) from thesis evaluation, next to the score this deployment
+  computes live, so the two can be compared directly.
+
+Every card also shows its saved held-out test error (rating games) or saved
+`S_att` (synthetic games) alongside the app's own live estimate, so a viewer
+can see whether this deployment's numbers match the thesis evaluation's.
+
+`manifest.json` documents its own schema in a `schema_notes` field; new
+entries only need `id`, `title`, `description`, and `pgn_path`, with every
+provenance field (`source`, `selection_label`, test errors, actual ratings,
+`substituted_plies`, and the synthetic-only fields) optional.
+
+### Live mode
+
+The "Live" tab follows an ongoing Lichess game move by move: paste a game ID
+or URL and click "Watch game", or click "Watch Lichess TV" to follow
+whichever game Lichess is currently featuring (switching automatically when
+TV switches games). Both use Server-Sent Events against this app's own
+`GET /live/stream/{game_id}` and `GET /live/tv` endpoints, which in turn
+follow Lichess's public streaming API (`GET /api/stream/game/{id}`,
+`GET /api/tv/feed`) with no token required.
+
+**Prefix-estimate semantics (read this before trusting the live curve).**
+The model's BiLSTM is not incremental: scoring ply *t* means running the
+whole model over plies 1..*t* from scratch (see "Limitations"). Live mode
+makes this workable by re-running that same batch pipeline on the growing
+PGN prefix every time a new move arrives, and takes only the estimate at
+the *final* ply of that run. The chart plots and freezes that one value per
+move; earlier points are never revised, even though a from-scratch rerun
+over a longer prefix would compute slightly different values for them. This
+is why the live curve is labeled **"live (move-by-move) estimate"** and can
+differ from the full-game curve you'd get by re-analyzing the finished game
+normally - the full-game curve is the non-causal, most-accurate view; the
+live curve is what the model could have told you in the moment. Suspicion
+score and critical moves are likewise computed on the prefix so far and
+marked provisional, and can shift as the game continues. Per-move inference
+time on this deployment's CPU is shown in the status line after each move.
+
+Once the game ends, a **"Show full-game analysis"** button appears and
+switches to the normal, non-live analysis view for the finished game.
+
+**Delay.** Lichess itself delays a spectator's view of an ongoing game by a
+few moves as an anti-cheating measure; the status line says so once
+connected. This is a Lichess-side delay, not something this app can reduce.
+
+**Following behavior.** The board auto-follows the newest move while you're
+viewing the latest ply. Stepping back (via the board controls, keyboard, or
+the chart) stops following and shows a "Jump to live" button; new moves
+still arrive and grow the chart, but the board stays where you left it
+until you jump back. Stopping, or switching to a different game or tab,
+cleanly closes the stream. On a dropped connection to this app's own SSE
+endpoint the page reconnects once automatically, then shows a persistent
+error if that also fails; a dropped upstream connection to Lichess is
+retried once server-side, transparently, before that same error surfaces.
+
 ### Roadmap (not built)
 
-- Live game streaming from Lichess, so an ongoing game updates move by move
-  instead of requiring a re-submitted PGN. See "Limitations" below for why
-  this is not a small addition (the model has no incremental/streaming mode).
 - Optional Stockfish evaluation plotted alongside the rating curve, to give a
   reviewer both signals (engine correlation and rating-estimate anomaly) on
   the same timeline.
@@ -189,6 +270,8 @@ chess.js as a native ES module.
 | `POST /predict/pgn` | Body `{pgn, white_baseline?, black_baseline?}`. Query `top_k` (default 5), `min_ply` (default 10). |
 | `POST /predict/upload` | Multipart form: `file` (`.pgn`), `white_baseline?`, `black_baseline?`. Query `top_k`, `min_ply`. |
 | `POST /predict/lichess` | Body `{game_id, white_baseline?, black_baseline?}`, where `game_id` is a bare 8-character Lichess ID or a full game URL. Query `top_k`, `min_ply`. |
+| `GET /live/stream/{game_id}` | Server-Sent Events. Follows one Lichess game (ongoing or just-finished) move by move. Query `top_k`, `min_ply`, `white_baseline?`, `black_baseline?`. See "Live mode". |
+| `GET /live/tv` | Server-Sent Events. Follows Lichess TV's currently featured game, switching automatically when TV switches games. Query `top_k`, `min_ply`. See "Live mode". |
 
 All three `predict/*` endpoints return the same shape:
 
@@ -221,6 +304,23 @@ malformed Lichess ID) returns HTTP 422 with a readable `detail`, never a bare
 500. A Lichess game that does not exist returns 404; hitting Lichess's rate
 limit returns 429.
 
+The two `/live/*` endpoints stream `text/event-stream`; each `data:` line is
+one JSON object with a `type`:
+
+- `{"type": "status", "state": ..., "message": ...}` - a status update.
+  `state` is one of `connecting`, `connected`, `reconnecting`, `capped`
+  (the game passed 100 plies, the model's training cap), `finished`, or
+  `error`.
+- `{"type": "update", "result": {...}}` - `result` has the same shape as
+  the `predict/*` endpoints above, plus `inference_ms` (this move's
+  inference wall time), `lichess_game_id`, and `live: true`. `per_move`
+  here covers only the plies known so far; a client that wants a frozen,
+  never-revised chart should keep only the newest row of each update and
+  append it to its own array, as `src/static/app.js`'s `mergeLiveUpdate`
+  does, rather than replacing its data with `per_move` wholesale.
+- `{"type": "error", "detail": ...}` - a terminal error; the stream closes
+  after this.
+
 ## Used as a submodule
 
 This repository is the `prototype/` submodule of
@@ -243,9 +343,12 @@ files from within this repository's history.
   The model's BiLSTM has a backward pass that needs a completed sequence;
   there is no incremental/streaming inference here; scoring ply *t* means
   running the model over plies 1..*t* from scratch. This is fine for the
-  batch PGN/Lichess-ID flows in this prototype, but is why true move-by-move
-  live streaming of an ongoing game is out of scope for this stage (see
-  "Web prototype").
+  batch PGN/Lichess-ID flows in this prototype. Live mode (see "Live mode")
+  works around it by re-running the batch pipeline on the growing prefix
+  and taking only the final-ply estimate each time, so the live curve is a
+  sequence of independent from-scratch runs, not a true incremental
+  inference; it can differ from the full-game curve for the same finished
+  game.
 - **Self-prediction fallback baselines are close to meaningless.** If neither
   the caller nor the PGN headers supply a baseline rating, the suspicion
   score compares the model's own final-ply prediction against itself. The
