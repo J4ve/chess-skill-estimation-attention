@@ -50,13 +50,14 @@ from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_move
 from format_data import (
     board_to_array,
     compute_time_spent,
+    game_setup_error,
     parse_game,
     parse_time_control,
     time_control_bucket,
     time_to_seconds,
 )
 from lichess_client import LichessError, fetch_game_pgn, parse_game_id
-from live import LiveGamePrefix, stream_game, stream_tv
+from live import LiveGamePrefix, sse_event, stream_game, stream_tv
 from suspicion_labels import label_for_score, resolve_cutoffs
 
 
@@ -267,6 +268,10 @@ def _pgn_to_tensor_inputs(pgn_text: str):
     game = chess.pgn.read_game(pgn_io)
     if game is None:
         raise ValueError("Could not parse PGN text")
+
+    setup_error = game_setup_error(game.headers)
+    if setup_error:
+        raise ValueError(setup_error)
 
     game_info = parse_game(game, max_plies=MAX_PLIES)
     if game_info is None:
@@ -570,6 +575,40 @@ async def predict_lichess_game(
     return response
 
 
+async def _live_stream_game_events(
+    game_id: str,
+    top_k: int,
+    min_ply: int,
+    white_baseline: float | None,
+    black_baseline: float | None,
+):
+    """Resolve, fetch, and seed a live game, yielding setup failures as SSE
+    error events instead of letting them raise before the stream starts."""
+    try:
+        resolved_id = parse_game_id(game_id)
+    except LichessError as exc:
+        yield sse_event({"type": "error", "detail": exc.detail})
+        return
+
+    try:
+        pgn_text = await fetch_game_pgn(resolved_id)
+    except LichessError as exc:
+        yield sse_event({"type": "error", "detail": exc.detail})
+        return
+
+    prefix = LiveGamePrefix(headers={}, max_plies=MAX_PLIES)
+    try:
+        prefix.seed_from_pgn(pgn_text)
+    except ValueError as exc:
+        yield sse_event({"type": "error", "detail": str(exc)})
+        return
+
+    async for event in stream_game(
+        resolved_id, prefix, _run_inference, top_k, min_ply, white_baseline, black_baseline
+    ):
+        yield event
+
+
 @app.get("/live/stream/{game_id}")
 async def live_stream_game(
     game_id: str,
@@ -579,24 +618,15 @@ async def live_stream_game(
     black_baseline: float | None = Query(None),
 ):
     """Follow one ongoing (or just-finished) Lichess game, streaming prefix-based
-    per-move analysis over Server-Sent Events. See README "Live mode"."""
-    try:
-        resolved_id = parse_game_id(game_id)
-    except LichessError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    per-move analysis over Server-Sent Events. See README "Live mode".
 
-    try:
-        pgn_text = await fetch_game_pgn(resolved_id)
-    except LichessError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-
-    prefix = LiveGamePrefix(headers={}, max_plies=MAX_PLIES)
-    try:
-        prefix.seed_from_pgn(pgn_text)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    generator = stream_game(resolved_id, prefix, _run_inference, top_k, min_ply, white_baseline, black_baseline)
+    Setup problems (bad game ID, Lichess 404/429, a non-standard game, missing
+    clocks) are sent as an SSE {"type": "error"} event and the stream then
+    closes, never as a bare HTTP error status: EventSource cannot read an
+    error response's body, so a raised HTTPException here would only ever
+    reach the browser as a generic "connection lost" with no reason.
+    """
+    generator = _live_stream_game_events(game_id, top_k, min_ply, white_baseline, black_baseline)
     return StreamingResponse(
         generator,
         media_type="text/event-stream",

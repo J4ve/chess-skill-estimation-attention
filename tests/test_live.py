@@ -129,6 +129,30 @@ def test_prefix_seed_from_pgn_without_clocks_raises():
         prefix.seed_from_pgn(no_clock_pgn)
 
 
+def test_prefix_seed_from_pgn_from_position_raises_custom_position_message():
+    from_position_pgn = (
+        '[Event "Rated Rapid Arena"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n'
+        '[Variant "From Position"]\n[SetUp "1"]\n'
+        '[FEN "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1"]\n\n'
+        "1. Nf3 *"
+    )
+    prefix = LiveGamePrefix({}, max_plies=100)
+    with pytest.raises(ValueError, match="custom position or variant"):
+        prefix.seed_from_pgn(from_position_pgn)
+
+
+def test_prefix_seed_from_pgn_chess960_raises_custom_position_message():
+    chess960_pgn = (
+        '[Event "Rated Chess960"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n'
+        '[Variant "Chess960"]\n[SetUp "1"]\n'
+        '[FEN "nbbrknrq/pppppppp/8/8/8/8/PPPPPPPP/NBBRKNRQ w KQkq - 0 1"]\n\n'
+        "1. Nf3 *"
+    )
+    prefix = LiveGamePrefix({}, max_plies=100)
+    with pytest.raises(ValueError, match="custom position or variant"):
+        prefix.seed_from_pgn(chess960_pgn)
+
+
 def test_prefix_add_move_caps_at_max_plies():
     prefix = LiveGamePrefix({"Result": "*"}, max_plies=2)
     assert prefix.add_move("e2e4", 300) is True

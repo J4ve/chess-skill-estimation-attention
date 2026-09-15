@@ -1,4 +1,4 @@
-from format_data import compute_time_spent, parse_time_control, time_control_bucket
+from format_data import compute_time_spent, game_setup_error, parse_time_control, time_control_bucket
 
 
 def test_bullet_time_control():
@@ -74,3 +74,26 @@ def test_compute_time_spent_missing_time_control_nulls_first_moves_only():
     # from the directly observed previous clock two plies back.
     clocks = [100, 95, 90]
     assert compute_time_spent(clocks, None, None) == [None, None, 10]
+
+
+def test_game_setup_error_standard_game_is_none():
+    assert game_setup_error({}) is None
+    assert game_setup_error({"Variant": "Standard"}) is None
+
+
+def test_game_setup_error_non_standard_variant():
+    assert game_setup_error({"Variant": "Chess960"}) is not None
+    assert game_setup_error({"Variant": "Crazyhouse"}) is not None
+
+
+def test_game_setup_error_from_position_setup_flag():
+    assert game_setup_error({"SetUp": "1", "FEN": "some-fen"}) is not None
+
+
+def test_game_setup_error_fen_present_even_without_setup_flag():
+    assert game_setup_error({"FEN": "some-fen"}) is not None
+
+
+def test_game_setup_error_message_mentions_custom_position():
+    message = game_setup_error({"Variant": "From Position", "SetUp": "1"})
+    assert "custom position or variant" in message

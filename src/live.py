@@ -34,7 +34,7 @@ import chess
 import chess.pgn
 import httpx
 
-from format_data import parse_game
+from format_data import game_setup_error, parse_game
 
 USER_AGENT = "RatingNet-Prototype/0.1 (+https://github.com/J4ve/RatingNet)"
 STREAM_GAME_URL_TEMPLATE = "https://lichess.org/api/stream/game/{game_id}"
@@ -122,6 +122,9 @@ class LiveGamePrefix:
         if game is None:
             raise ValueError("Could not parse PGN text")
         self.headers = dict(game.headers)
+        setup_error = game_setup_error(game.headers)
+        if setup_error:
+            raise ValueError(setup_error)
         total_moves = sum(1 for _ in game.mainline_moves())
         if total_moves == 0:
             return

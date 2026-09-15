@@ -439,7 +439,11 @@ one JSON object with a `type`:
   append it to its own array, as `src/static/app.js`'s `mergeLiveUpdate`
   does, rather than replacing its data with `per_move` wholesale.
 - `{"type": "error", "detail": ...}` - a terminal error; the stream closes
-  after this.
+  after this. `GET /live/stream/{game_id}` always opens the stream (HTTP 200)
+  and sends this event for a setup problem (bad ID, Lichess 404/429, a
+  non-standard game, missing clocks) rather than a bare HTTP error status,
+  since `EventSource` cannot read an error response's body; the client should
+  show `detail` and not attempt to reconnect after this event.
 
 ## Used as a submodule
 

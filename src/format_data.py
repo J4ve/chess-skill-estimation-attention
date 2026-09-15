@@ -112,6 +112,31 @@ def categorize_time_control(estimated_duration: int) -> str:
         return "classical"
 
 
+NON_STANDARD_GAME_MESSAGE = (
+    "This game starts from a custom position or variant (e.g. a thematic arena). "
+    "The model was trained only on standard games from the normal starting "
+    "position, so it cannot analyze it."
+)
+
+
+def game_setup_error(headers) -> str | None:
+    """Return why this PGN can't be analyzed due to its setup, or None if it's a
+    standard game from the normal starting position.
+
+    Catches a non-``Standard`` ``Variant`` header (Chess960, Crazyhouse, ...) and
+    an explicit start position (``SetUp "1"`` with a ``FEN`` header, as Lichess
+    thematic "From Position" arenas use), both up front and before any clock
+    check, since the model was trained only on standard games from the normal
+    starting position.
+    """
+    variant = (headers.get("Variant") or "Standard").strip()
+    setup = (headers.get("SetUp") or "").strip()
+    fen = (headers.get("FEN") or "").strip()
+    if variant.lower() != "standard" or setup == "1" or fen:
+        return NON_STANDARD_GAME_MESSAGE
+    return None
+
+
 def parse_time_control(time_control_header: str | None) -> tuple[int | None, int | None]:
     """Parse a PGN ``TimeControl`` header (``"{base_seconds}+{increment_seconds}"``,
     e.g. "180+0") into ``(base, increment)``. Returns ``(None, None)`` for a
