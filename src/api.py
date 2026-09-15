@@ -40,7 +40,7 @@ import chess.pgn
 import torch
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -49,6 +49,7 @@ from chess_rating_net import ChessEloPredictor
 from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
 from format_data import board_to_array, parse_game, time_to_seconds
 from lichess_client import LichessError, fetch_game_pgn, parse_game_id
+from live import LiveGamePrefix, stream_game, stream_tv
 
 
 # Baseline normalization constants (must match training; see audit report).
@@ -481,6 +482,54 @@ async def predict_lichess_game(
     return response
 
 
+@app.get("/live/stream/{game_id}")
+async def live_stream_game(
+    game_id: str,
+    top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20),
+    min_ply: int = Query(DEFAULT_MIN_PLY, ge=0, le=100),
+    white_baseline: float | None = Query(None),
+    black_baseline: float | None = Query(None),
+):
+    """Follow one ongoing (or just-finished) Lichess game, streaming prefix-based
+    per-move analysis over Server-Sent Events. See README "Live mode"."""
+    try:
+        resolved_id = parse_game_id(game_id)
+    except LichessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    try:
+        pgn_text = await fetch_game_pgn(resolved_id)
+    except LichessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    prefix = LiveGamePrefix(headers={}, max_plies=MAX_PLIES)
+    try:
+        prefix.seed_from_pgn(pgn_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    generator = stream_game(resolved_id, prefix, _run_inference, top_k, min_ply, white_baseline, black_baseline)
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/live/tv")
+async def live_tv(
+    top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20),
+    min_ply: int = Query(DEFAULT_MIN_PLY, ge=0, le=100),
+):
+    """Follow Lichess TV's currently featured game over Server-Sent Events."""
+    generator = stream_tv(fetch_game_pgn, _run_inference, top_k, min_ply, MAX_PLIES)
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/api")
 async def api_index():
     return {
@@ -490,6 +539,8 @@ async def api_index():
             "predict_text": "POST /predict/pgn",
             "predict_upload": "POST /predict/upload",
             "predict_lichess": "POST /predict/lichess",
+            "live_stream_game": "GET /live/stream/{game_id} (Server-Sent Events)",
+            "live_tv": "GET /live/tv (Server-Sent Events)",
         },
     }
 
