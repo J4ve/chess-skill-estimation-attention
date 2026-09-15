@@ -143,10 +143,15 @@
         </p>
         <div class="suspicion-bar-row">
           <span class="suspicion-label">White</span>
-          <div id="white-suspicion-track" class="suspicion-bar-track">
-            <div id="white-suspicion-bar" class="suspicion-bar-fill"></div>
-            <div id="white-suspicion-tick-p75" class="suspicion-tick" hidden></div>
-            <div id="white-suspicion-tick-p95" class="suspicion-tick" hidden></div>
+          <div class="suspicion-scale-wrap">
+            <div id="white-suspicion-marker" class="suspicion-marker" hidden>
+              <span class="suspicion-marker-value" id="white-suspicion-marker-value">-</span>
+            </div>
+            <div id="white-suspicion-scale" class="suspicion-scale">
+              <div class="suspicion-zone suspicion-zone-typical" id="white-zone-typical"><span class="suspicion-zone-label"><span class="zone-label-full">Typical</span><span class="zone-label-short">Typical</span></span></div>
+              <div class="suspicion-zone suspicion-zone-unusual" id="white-zone-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Unusual</span><span class="zone-label-short">Unusual</span></span></div>
+              <div class="suspicion-zone suspicion-zone-highly-unusual" id="white-zone-highly-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Highly unusual</span><span class="zone-label-short">High</span></span></div>
+            </div>
           </div>
           <span id="white-suspicion-value" class="suspicion-value">-</span>
           <span id="white-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span>
@@ -155,10 +160,15 @@
         <p id="white-suspicion-explain" class="suspicion-explain"></p>
         <div class="suspicion-bar-row">
           <span class="suspicion-label">Black</span>
-          <div id="black-suspicion-track" class="suspicion-bar-track">
-            <div id="black-suspicion-bar" class="suspicion-bar-fill"></div>
-            <div id="black-suspicion-tick-p75" class="suspicion-tick" hidden></div>
-            <div id="black-suspicion-tick-p95" class="suspicion-tick" hidden></div>
+          <div class="suspicion-scale-wrap">
+            <div id="black-suspicion-marker" class="suspicion-marker" hidden>
+              <span class="suspicion-marker-value" id="black-suspicion-marker-value">-</span>
+            </div>
+            <div id="black-suspicion-scale" class="suspicion-scale">
+              <div class="suspicion-zone suspicion-zone-typical" id="black-zone-typical"><span class="suspicion-zone-label"><span class="zone-label-full">Typical</span><span class="zone-label-short">Typical</span></span></div>
+              <div class="suspicion-zone suspicion-zone-unusual" id="black-zone-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Unusual</span><span class="zone-label-short">Unusual</span></span></div>
+              <div class="suspicion-zone suspicion-zone-highly-unusual" id="black-zone-highly-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Highly unusual</span><span class="zone-label-short">High</span></span></div>
+            </div>
           </div>
           <span id="black-suspicion-value" class="suspicion-value">-</span>
           <span id="black-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span>
@@ -170,7 +180,10 @@
           use on its own.
           <button type="button" class="info-icon" data-info-key="suspicionLabel" aria-label="What do these labels mean?">i</button>
         </p>
-        <p id="suspicion-label-provisional" class="suspicion-label-provisional" hidden></p>
+        <p id="suspicion-label-provisional" class="suspicion-label-provisional" hidden>
+          <span id="suspicion-label-provisional-text"></span>
+          <button type="button" class="info-icon" data-info-key="suspicionProvisional" aria-label="What does provisional mean here?">i</button>
+        </p>
       </div>
 
       <div class="analysis-board-row">

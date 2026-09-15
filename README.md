@@ -191,8 +191,14 @@ percentile cutoffs computed from ordinary, finished, rated games in the
 thesis's held-out TEST-partition corpus (games the model never trained on):
 **Typical** (below the 75th percentile of those games), **Unusual** (75th to
 95th percentile), or **Highly unusual: worth a human review** (above the
-95th percentile). Small ticks on the bar track mark the p75 and p95 cutoff
-positions so the bar reads visually, and a caption under the bars states the
+95th percentile). Each bar is a segmented scale, not a plain gradient: the
+track itself is split into green/amber/red Typical/Unusual/Highly unusual
+zones sized from that side's resolved p75/p95 cutoffs, with the score shown
+as a marker (a needle with its value in a small bubble) at its position on
+the scale, so the zone boundaries and the score's position are both visible
+at a glance instead of only in the chip text. The scale's max is
+`max(score, 1.6 * p95)` so all three zones stay proportionate and visible
+even when a score sits far past p95. A caption under the bars states the
 comparison is against ordinary games, "not evidence of engine use on its
 own." Cutoffs use the game's own time-control bucket (bullet/blitz/rapid/
 classical/ultrabullet, derived from the PGN `TimeControl` header) when that

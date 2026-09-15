@@ -452,44 +452,108 @@ textarea {
 .suspicion-bar-row {
   display: grid;
   grid-template-columns: 3.5rem minmax(0, 1fr) 4.5rem auto auto;
-  align-items: center;
+  align-items: end;
   gap: 0.6rem;
   margin-bottom: 0.4rem;
+  padding-top: 1.4rem;
 }
 
 .suspicion-label {
   font-size: 0.85rem;
   color: var(--text-muted);
+  padding-bottom: 0.15rem;
 }
 
-.suspicion-bar-track {
+.suspicion-scale-wrap {
   position: relative;
-  background: #eceae4;
-  border-radius: 999px;
-  height: 0.8rem;
+  min-width: 0;
+}
+
+.suspicion-scale {
+  display: flex;
+  height: 1.7rem;
+  border-radius: 6px;
   overflow: hidden;
   min-width: 0;
 }
 
-.suspicion-bar-fill {
-  height: 100%;
-  width: 0%;
-  background: linear-gradient(90deg, var(--safe-fill), var(--danger-fill));
-  border-radius: 999px;
-  transition: width 0.3s ease;
+.suspicion-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  transition: flex-basis 0.3s ease;
 }
 
-.suspicion-tick {
+.suspicion-zone-typical {
+  background: var(--safe-fill);
+  flex-basis: 100%;
+}
+
+.suspicion-zone-unusual {
+  background: #c9982e;
+  flex-basis: 0%;
+}
+
+.suspicion-zone-highly-unusual {
+  background: var(--danger-fill);
+  flex-basis: 0%;
+}
+
+.suspicion-zone-label {
+  display: block;
+  max-width: 100%;
+  padding: 0 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.zone-label-short {
+  display: none;
+}
+
+.suspicion-marker {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: rgba(31, 35, 32, 0.4);
+  left: 0%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   pointer-events: none;
+  transition: left 0.3s ease;
 }
 
-.suspicion-tick[hidden] {
+.suspicion-marker[hidden] {
   display: none;
+}
+
+.suspicion-marker::after {
+  content: "";
+  flex: 1;
+  width: 2px;
+  background: var(--text);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.suspicion-marker-value {
+  position: absolute;
+  top: -1.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: var(--text);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  white-space: nowrap;
 }
 
 .suspicion-value {
@@ -1000,6 +1064,19 @@ textarea {
   .baseline-source-tag {
     grid-column: 2 / -1;
     justify-self: start;
+  }
+
+  .zone-label-full {
+    display: none;
+  }
+
+  .zone-label-short {
+    display: inline;
+  }
+
+  .suspicion-zone-label {
+    font-size: 0.6rem;
+    padding: 0 0.15rem;
   }
 
   .board-controls {

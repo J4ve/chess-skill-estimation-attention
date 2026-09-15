@@ -1,11 +1,6 @@
 import { Chess } from "./vendor/chess-js/chess.js";
 
 const API_BASE = "";
-// Elo points; bars saturate at this weighted score. Logged real predictions
-// (logs/predictions.jsonl) show per-side scores from ~90 up to ~845, so 400
-// sits mid-range: clearly-elevated games still read as "high" without every
-// ordinary game landing near full.
-const SUSPICION_BAR_MAX = 400;
 const AUTOPLAY_INTERVAL_MS = 1000;
 const HIDE_ACTUAL_RATINGS_KEY = "ratingnet.hideActualRatings";
 
@@ -56,6 +51,10 @@ const METRIC_INFO = {
   suspicionLabel: {
     term: "Typical / Unusual / Highly unusual label",
     text: "Compares this side's suspicion score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile of those games, Unusual is the 75th-95th percentile, and Highly unusual is above the 95th percentile. It describes how uncommon the score is among ordinary games, not whether anyone cheated; a clean synthetic game in thesis evaluation scored well into the highly-unusual range.",
+  },
+  suspicionProvisional: {
+    term: "Provisional cutoffs",
+    text: "The percentile cutoffs behind these labels are still being computed from the full planned sample of held-out test games; this note updates with the current game count and disappears once the full run finishes.",
   },
   clockTime: {
     term: "Clock remaining and time spent",
@@ -776,9 +775,8 @@ function escapeHtml(text) {
 function renderSuspicion(result) {
   const whiteScore = result.white_suspicion_score;
   const blackScore = result.black_suspicion_score;
+  const cutoffsUsed = result.suspicion_cutoffs_used;
 
-  $("white-suspicion-bar").style.width = `${Math.min(100, (whiteScore / SUSPICION_BAR_MAX) * 100)}%`;
-  $("black-suspicion-bar").style.width = `${Math.min(100, (blackScore / SUSPICION_BAR_MAX) * 100)}%`;
   $("white-suspicion-value").textContent = whiteScore.toFixed(1);
   $("black-suspicion-value").textContent = blackScore.toFixed(1);
 
@@ -792,18 +790,64 @@ function renderSuspicion(result) {
     `About ${Math.round(blackScore)} rating points of attention-weighted gap between the ` +
     `model's estimate and Black's baseline.`;
 
-  renderSuspicionLabelChip("white", result.white_suspicion_label, result.provisional);
-  renderSuspicionLabelChip("black", result.black_suspicion_label, result.provisional);
-  renderSuspicionTicks("white", result.suspicion_cutoffs_used);
-  renderSuspicionTicks("black", result.suspicion_cutoffs_used);
+  renderSuspicionScale("white", whiteScore, result.white_suspicion_label, cutoffsUsed, result.provisional);
+  renderSuspicionScale("black", blackScore, result.black_suspicion_label, cutoffsUsed, result.provisional);
 
-  const cutoffsUsed = result.suspicion_cutoffs_used;
   $("suspicion-label-caption").hidden = !cutoffsUsed;
-  $("suspicion-label-provisional").hidden = !(cutoffsUsed && cutoffsUsed.provisional);
-  if (cutoffsUsed && cutoffsUsed.provisional) {
-    $("suspicion-label-provisional").textContent =
-      cutoffsUsed.provisional_note || "These cutoffs are provisional and may be revised.";
+  const provisionalEl = $("suspicion-label-provisional");
+  const isProvisional = Boolean(cutoffsUsed && cutoffsUsed.provisional);
+  provisionalEl.hidden = !isProvisional;
+  if (isProvisional) {
+    const n = cutoffsUsed.provisional_games;
+    $("suspicion-label-provisional-text").textContent =
+      `Provisional cutoffs${typeof n === "number" ? `: based on ${n.toLocaleString()} test games` : ""}.`;
+    if (cutoffsUsed.provisional_note) {
+      METRIC_INFO.suspicionProvisional.text = cutoffsUsed.provisional_note;
+    }
   }
+}
+
+// Renders one side's suspicion score as a segmented Typical/Unusual/Highly
+// unusual scale (colour zones sized from the resolved p75/p95 cutoffs) with
+// a marker at the score's position, plus the matching label chip. The scale
+// max is max(score, 1.6 * p95) so all three zones stay visible regardless of
+// how far the score sits above p95.
+function renderSuspicionScale(prefix, score, label, cutoffs, provisional) {
+  const marker = $(`${prefix}-suspicion-marker`);
+  const markerValue = $(`${prefix}-suspicion-marker-value`);
+  const zoneTypical = $(`${prefix}-zone-typical`);
+  const zoneUnusual = $(`${prefix}-zone-unusual`);
+  const zoneHighlyUnusual = $(`${prefix}-zone-highly-unusual`);
+
+  if (!cutoffs) {
+    marker.hidden = true;
+    zoneTypical.style.flexBasis = "100%";
+    zoneUnusual.style.flexBasis = "0%";
+    zoneHighlyUnusual.style.flexBasis = "0%";
+    renderSuspicionLabelChip(prefix, label, provisional);
+    return;
+  }
+
+  const p75 = cutoffs.p75;
+  const p95 = cutoffs.p95;
+  const scaleMax = Math.max(score, 1.6 * p95, p95 + 1);
+  const typicalPct = clampPct((p75 / scaleMax) * 100);
+  const unusualPct = clampPct(((p95 - p75) / scaleMax) * 100);
+  const highlyUnusualPct = Math.max(0, 100 - typicalPct - unusualPct);
+
+  zoneTypical.style.flexBasis = `${typicalPct}%`;
+  zoneUnusual.style.flexBasis = `${unusualPct}%`;
+  zoneHighlyUnusual.style.flexBasis = `${highlyUnusualPct}%`;
+
+  marker.hidden = false;
+  marker.style.left = `${clampPct((score / scaleMax) * 100)}%`;
+  markerValue.textContent = provisional ? `${score.toFixed(1)}*` : score.toFixed(1);
+
+  renderSuspicionLabelChip(prefix, label, provisional);
+}
+
+function clampPct(value) {
+  return Math.max(0, Math.min(100, value));
 }
 
 function renderSuspicionLabelChip(prefix, label, provisional) {
@@ -819,20 +863,6 @@ function renderSuspicionLabelChip(prefix, label, provisional) {
   const text = SUSPICION_LABEL_TEXT[label] || label;
   chip.textContent = provisional ? `${text} (so far)` : text;
   chip.title = provisional ? "Provisional: based on the moves seen so far and can change as the game continues." : "";
-}
-
-function renderSuspicionTicks(prefix, cutoffs) {
-  const p75Tick = $(`${prefix}-suspicion-tick-p75`);
-  const p95Tick = $(`${prefix}-suspicion-tick-p95`);
-  if (!cutoffs) {
-    p75Tick.hidden = true;
-    p95Tick.hidden = true;
-    return;
-  }
-  p75Tick.style.left = `${Math.min(100, Math.max(0, (cutoffs.p75 / SUSPICION_BAR_MAX) * 100))}%`;
-  p95Tick.style.left = `${Math.min(100, Math.max(0, (cutoffs.p95 / SUSPICION_BAR_MAX) * 100))}%`;
-  p75Tick.hidden = false;
-  p95Tick.hidden = false;
 }
 
 function formatSource(source) {

@@ -422,6 +422,7 @@ def _run_inference(
         resolved = resolve_cutoffs(SUSPICION_CUTOFFS, tc_bucket)
         white_suspicion_label = label_for_score(white_score, resolved)
         black_suspicion_label = label_for_score(black_score, resolved)
+        overall_n_sides = (SUSPICION_CUTOFFS.get("overall") or {}).get("n_sides")
         suspicion_cutoffs_used = {
             "p75": resolved.p75,
             "p95": resolved.p95,
@@ -429,6 +430,7 @@ def _run_inference(
             "time_control": tc_bucket,
             "provisional": SUSPICION_CUTOFFS.get("provisional", False),
             "provisional_note": SUSPICION_CUTOFFS.get("provisional_note"),
+            "provisional_games": overall_n_sides // 2 if isinstance(overall_n_sides, int) else None,
         }
 
     result_header = (headers.get("Result") or "*").strip()
