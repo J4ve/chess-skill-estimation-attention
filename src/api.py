@@ -47,9 +47,10 @@ from pydantic import BaseModel
 from baseline import resolve_actual_rating, resolve_baseline
 from chess_rating_net import ChessEloPredictor
 from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
-from format_data import board_to_array, parse_game, time_to_seconds
+from format_data import board_to_array, parse_game, time_control_bucket, time_to_seconds
 from lichess_client import LichessError, fetch_game_pgn, parse_game_id
 from live import LiveGamePrefix, stream_game, stream_tv
+from suspicion_labels import label_for_score, resolve_cutoffs
 
 
 # Baseline normalization constants (must match training; see audit report).
@@ -63,6 +64,12 @@ MODEL: ChessEloPredictor | None = None
 MODEL_PARAMS: dict[str, Any] | None = None
 DEVICE: torch.device | None = None
 CHECKPOINT_PATH: Path | None = None
+
+# Suspicion-score percentile cutoffs (src/static/suspicion_cutoffs.json), loaded once
+# at startup. None when the file is missing, in which case suspicion labels are
+# omitted from responses rather than guessed. See "Suspicion labels" in the README.
+SUSPICION_CUTOFFS: dict[str, Any] | None = None
+SUSPICION_CUTOFFS_PATH = Path(__file__).resolve().parent / "static" / "suspicion_cutoffs.json"
 
 # Lightweight cache: keyed by a hash of the request inputs -> result.
 RESULT_CACHE: dict[str, Any] = {}
@@ -189,13 +196,26 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path
     return model, params, device, checkpoint_path
 
 
+def _load_suspicion_cutoffs() -> dict[str, Any] | None:
+    if not SUSPICION_CUTOFFS_PATH.exists():
+        logging.warning(
+            "No suspicion cutoffs file at %s; suspicion_score labels will be omitted "
+            "from responses until one is generated.",
+            SUSPICION_CUTOFFS_PATH,
+        )
+        return None
+    with SUSPICION_CUTOFFS_PATH.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup hook: load the model once and keep it in memory."""
-    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH
+    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH, SUSPICION_CUTOFFS
     _setup_logging()
     MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH = _load_model()
     logging.info("Serving checkpoint: %s", CHECKPOINT_PATH)
+    SUSPICION_CUTOFFS = _load_suspicion_cutoffs()
     yield
     MODEL = None
 
@@ -367,6 +387,25 @@ def _run_inference(
     )
     warnings.extend(critical_move_warnings)
 
+    # Suspicion labels compare this game's score with ordinary held-out test
+    # games (see suspicion_labels.py and src/static/suspicion_cutoffs.json's own
+    # "note"), never a cheat-detection verdict. Omitted (None) when the checkpoint
+    # has no anomaly branch or no cutoffs file has been generated yet.
+    white_suspicion_label = None
+    black_suspicion_label = None
+    suspicion_cutoffs_used = None
+    if anomaly_available and SUSPICION_CUTOFFS is not None:
+        tc_bucket = time_control_bucket(headers.get("TimeControl"))
+        resolved = resolve_cutoffs(SUSPICION_CUTOFFS, tc_bucket)
+        white_suspicion_label = label_for_score(white_score, resolved)
+        black_suspicion_label = label_for_score(black_score, resolved)
+        suspicion_cutoffs_used = {
+            "p75": resolved.p75,
+            "p95": resolved.p95,
+            "source": resolved.source,
+            "time_control": tc_bucket,
+        }
+
     result_header = (headers.get("Result") or "*").strip()
     ongoing = result_header == "*"
 
@@ -384,6 +423,9 @@ def _run_inference(
         "white_suspicion_score": round(white_score, 4),
         "black_suspicion_score": round(black_score, 4),
         "combined_suspicion_score": round(combined_score, 4),
+        "white_suspicion_label": white_suspicion_label,
+        "black_suspicion_label": black_suspicion_label,
+        "suspicion_cutoffs_used": suspicion_cutoffs_used,
         "per_move": move_records,
         "critical_moves": critical_moves,
         "critical_moves_min_ply": min_ply,

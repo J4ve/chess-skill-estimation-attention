@@ -110,3 +110,20 @@ def categorize_time_control(estimated_duration: int) -> str:
         return "rapid"
     else:
         return "classical"
+
+
+def time_control_bucket(time_control_header: str | None) -> str | None:
+    """Derive a Lichess time-control bucket from a PGN ``TimeControl`` header.
+
+    ``TimeControl`` is ``"{base_seconds}+{increment_seconds}"`` (e.g. "180+0").
+    Returns None for a missing header, correspondence ("-"), or any other value
+    that isn't exactly two digit parts, so callers can fall back to an
+    overall/ungrouped cutoff instead of guessing.
+    """
+    if not time_control_header:
+        return None
+    parts = time_control_header.split("+")
+    if len(parts) != 2 or not (parts[0].isdigit() and parts[1].isdigit()):
+        return None
+    base, inc = int(parts[0]), int(parts[1])
+    return categorize_time_control(base + 40 * inc)

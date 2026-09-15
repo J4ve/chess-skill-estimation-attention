@@ -340,6 +340,15 @@ All three `predict/*` endpoints return the same shape:
   estimate per side.
 - `white_suspicion_score`, `black_suspicion_score`, `combined_suspicion_score`:
   attention-weighted deviation from baseline, summed over the game.
+- `white_suspicion_label`, `black_suspicion_label`: one of `typical`,
+  `unusual`, or `highly_unusual`, from comparing that side's suspicion score
+  against percentile cutoffs computed on ordinary held-out test games (see
+  "Suspicion labels" below). `null` when the served checkpoint has no anomaly
+  branch or no cutoffs file has been generated.
+- `suspicion_cutoffs_used`: the `p75`/`p95` cutoff values actually applied
+  (`source` is `time_control` or `overall`, `time_control` is the bucket
+  derived from the PGN `TimeControl` header, or `null` if it couldn't be
+  parsed). `null` under the same conditions as the labels above.
 - `per_move`: one record per ply (`ply`, `move` as SAN, `uci`, `white_rating`,
   `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`).
 - `critical_moves`: up to `top_k` entries per side, ranked by
