@@ -46,7 +46,7 @@ from pydantic import BaseModel
 
 from baseline import resolve_baseline
 from chess_rating_net import ChessEloPredictor
-from critical_moves import DEFAULT_TOP_K, compute_critical_moves
+from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
 from format_data import board_to_array, parse_game, time_to_seconds
 from lichess_client import LichessError, fetch_game_pgn, parse_game_id
 
@@ -264,6 +264,7 @@ def _run_inference(
     white_baseline_request: float | None,
     black_baseline_request: float | None,
     top_k: int,
+    min_ply: int = DEFAULT_MIN_PLY,
 ) -> dict[str, Any]:
     assert MODEL is not None and DEVICE is not None
 
@@ -344,7 +345,7 @@ def _run_inference(
         )
 
     critical_moves, critical_move_warnings = compute_critical_moves(
-        move_records, anomaly_available, top_k=top_k
+        move_records, anomaly_available, top_k=top_k, min_ply=min_ply
     )
     warnings.extend(critical_move_warnings)
 
@@ -365,6 +366,7 @@ def _run_inference(
         "combined_suspicion_score": round(combined_score, 4),
         "per_move": move_records,
         "critical_moves": critical_moves,
+        "critical_moves_min_ply": min_ply,
         "ongoing": ongoing,
         "provisional": ongoing,
     }
@@ -375,10 +377,11 @@ def _run_inference_or_422(
     white_baseline: float | None,
     black_baseline: float | None,
     top_k: int,
+    min_ply: int = DEFAULT_MIN_PLY,
 ) -> dict[str, Any]:
     """Run inference, translating expected PGN/model-input problems into HTTP 422."""
     try:
-        return _run_inference(pgn_text, white_baseline, black_baseline, top_k)
+        return _run_inference(pgn_text, white_baseline, black_baseline, top_k, min_ply)
     except ValueError as exc:
         logging.info("Rejecting request: %s", exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -398,15 +401,18 @@ async def health():
 async def predict_pgn_text(
     request: PGNTextRequest,
     top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20, description="Critical moves to return per side"),
+    min_ply: int = Query(
+        DEFAULT_MIN_PLY, ge=0, le=100, description="Exclude plies before this from critical-move ranking"
+    ),
 ):
     """Submit PGN text and receive per-move ratings, suspicion scores, and critical moves."""
     cache_key = _stable_cache_key(
-        "pgn_text", request.pgn, str(request.white_baseline), str(request.black_baseline), str(top_k)
+        "pgn_text", request.pgn, str(request.white_baseline), str(request.black_baseline), str(top_k), str(min_ply)
     )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
 
-    result = _run_inference_or_422(request.pgn, request.white_baseline, request.black_baseline, top_k)
+    result = _run_inference_or_422(request.pgn, request.white_baseline, request.black_baseline, top_k, min_ply)
 
     _log_prediction({"source": "pgn_text", "cache_key": cache_key, **result})
     response = {"status": "ok", **result}
@@ -420,17 +426,20 @@ async def predict_pgn_upload(
     white_baseline: float | None = Form(None),
     black_baseline: float | None = Form(None),
     top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20, description="Critical moves to return per side"),
+    min_ply: int = Query(
+        DEFAULT_MIN_PLY, ge=0, le=100, description="Exclude plies before this from critical-move ranking"
+    ),
 ):
     """Upload a .pgn file and receive per-move ratings, suspicion scores, and critical moves."""
     content = await file.read()
     pgn_text = content.decode("utf-8", errors="replace")
     cache_key = _stable_cache_key(
-        "pgn_upload", file.filename, pgn_text, str(white_baseline), str(black_baseline), str(top_k)
+        "pgn_upload", file.filename, pgn_text, str(white_baseline), str(black_baseline), str(top_k), str(min_ply)
     )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
 
-    result = _run_inference_or_422(pgn_text, white_baseline, black_baseline, top_k)
+    result = _run_inference_or_422(pgn_text, white_baseline, black_baseline, top_k, min_ply)
 
     _log_prediction({"source": "pgn_upload", "filename": file.filename, "cache_key": cache_key, **result})
     response = {"status": "ok", **result}
@@ -442,6 +451,9 @@ async def predict_pgn_upload(
 async def predict_lichess_game(
     request: LichessGameRequest,
     top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20, description="Critical moves to return per side"),
+    min_ply: int = Query(
+        DEFAULT_MIN_PLY, ge=0, le=100, description="Exclude plies before this from critical-move ranking"
+    ),
 ):
     """Fetch a Lichess game by ID or URL and receive per-move ratings, suspicion scores, and critical moves."""
     try:
@@ -450,7 +462,7 @@ async def predict_lichess_game(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     cache_key = _stable_cache_key(
-        "lichess", game_id, str(request.white_baseline), str(request.black_baseline), str(top_k)
+        "lichess", game_id, str(request.white_baseline), str(request.black_baseline), str(top_k), str(min_ply)
     )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
@@ -460,7 +472,7 @@ async def predict_lichess_game(
     except LichessError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    result = _run_inference_or_422(pgn_text, request.white_baseline, request.black_baseline, top_k)
+    result = _run_inference_or_422(pgn_text, request.white_baseline, request.black_baseline, top_k, min_ply)
     result["lichess_game_id"] = game_id
 
     _log_prediction({"source": "lichess", "game_id": game_id, "cache_key": cache_key, **result})
