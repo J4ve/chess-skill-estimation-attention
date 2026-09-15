@@ -193,7 +193,30 @@ function renderSamplesGrid(samples) {
     return;
   }
   statusEl.hidden = true;
-  samples.forEach((sample) => grid.appendChild(buildSampleCard(sample)));
+
+  const groups = new Map();
+  samples.forEach((sample) => {
+    const key = sample.group || "Samples";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(sample);
+  });
+
+  groups.forEach((groupSamples, groupName) => {
+    const section = document.createElement("div");
+    section.className = "samples-group";
+
+    const heading = document.createElement("h3");
+    heading.className = "samples-group-title";
+    heading.textContent = groupName;
+    section.appendChild(heading);
+
+    const row = document.createElement("div");
+    row.className = "samples-grid-row";
+    groupSamples.forEach((sample) => row.appendChild(buildSampleCard(sample)));
+    section.appendChild(row);
+
+    grid.appendChild(section);
+  });
 }
 
 async function loadAndAnalyzeSample(sample, cardEl) {
@@ -446,10 +469,22 @@ function renderSampleMetaBox(sampleMeta) {
     facts.push(`Black actual rating ${Math.round(sampleMeta.black_actual_rating)}`);
   }
   if (typeof sampleMeta.white_test_error === "number") {
-    facts.push(`White test error ${sampleMeta.white_test_error.toFixed(1)}`);
+    facts.push(`White saved test error ${sampleMeta.white_test_error.toFixed(1)} pts (compare to the estimate above)`);
   }
   if (typeof sampleMeta.black_test_error === "number") {
-    facts.push(`Black test error ${sampleMeta.black_test_error.toFixed(1)}`);
+    facts.push(`Black saved test error ${sampleMeta.black_test_error.toFixed(1)} pts (compare to the estimate above)`);
+  }
+  if (typeof sampleMeta.substitution_rate === "number") {
+    facts.push(`${Math.round(sampleMeta.substitution_rate * 100)}% of moves substituted`);
+  }
+  if (sampleMeta.maia_band) {
+    facts.push(`Maia band ${sampleMeta.maia_band}`);
+  }
+  if (sampleMeta.engine) {
+    facts.push(`Substitution engine: ${sampleMeta.engine}`);
+  }
+  if (typeof sampleMeta.s_att_eval === "number") {
+    facts.push(`Saved suspicion score (S_att) ${sampleMeta.s_att_eval.toFixed(1)} (compare to the bars above)`);
   }
 
   box.innerHTML = `

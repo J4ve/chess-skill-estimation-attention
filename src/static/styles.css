@@ -197,6 +197,18 @@ textarea {
 }
 
 .samples-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.samples-group-title {
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+}
+
+.samples-grid-row {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: 0.75rem;
