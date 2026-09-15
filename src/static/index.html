@@ -93,11 +93,34 @@
     <section class="results-panel" id="results-panel" hidden aria-label="Analysis results">
       <div class="results-header">
         <h2 class="results-title" id="results-title">-</h2>
-        <span id="provisional-badge" class="provisional-badge" hidden>Provisional (game ongoing)</span>
-        <span id="live-badge" class="live-badge" hidden>Live (move-by-move) estimate</span>
+        <span id="provisional-badge" class="provisional-badge" hidden
+          >Provisional (game ongoing) <button type="button" class="info-icon" data-info-key="provisional" aria-label="What does this badge mean?">i</button></span
+        >
+        <span id="live-badge" class="live-badge" hidden
+          >Live (move-by-move) estimate <button type="button" class="info-icon" data-info-key="liveVsFull" aria-label="What does this badge mean?">i</button></span
+        >
       </div>
 
+      <div class="actual-rating-toggle-row">
+        <label class="reveal-switch-label" for="hide-actual-toggle">
+          <input type="checkbox" id="hide-actual-toggle" />
+          Hide actual ratings
+        </label>
+        <button type="button" id="reveal-actual-button" class="secondary-button" hidden>Reveal</button>
+      </div>
+
+      <p id="results-error-line" class="results-error-line" hidden></p>
+
+      <details class="metrics-glossary" id="metrics-glossary">
+        <summary>What do these numbers mean?</summary>
+        <dl id="metrics-glossary-list" class="metrics-glossary-list"></dl>
+      </details>
+
       <div id="live-status-panel" class="live-status-panel" hidden>
+        <div class="live-status-header">
+          <span>Live status</span>
+          <button type="button" class="info-icon" data-info-key="inferenceTime" aria-label="What does per-move inference time mean?">i</button>
+        </div>
         <p id="live-status-text" class="live-status-text"></p>
         <div class="live-status-actions">
           <button id="jump-to-live" type="button" class="secondary-button" hidden>Jump to live</button>
@@ -111,6 +134,7 @@
       <div id="warnings-box" class="warnings-box" hidden></div>
 
       <div class="suspicion-section">
+        <h2 class="suspicion-heading">Suspicion score <button type="button" class="info-icon" data-info-key="suspicion" aria-label="What is the suspicion score?">i</button></h2>
         <p class="suspicion-caption">
           Suspicion score is a supplementary flag for human review, not proof of cheating. It is
           S_att, the attention-weighted average rating-point gap between the model's per-move
@@ -137,14 +161,18 @@
         <div class="board-column">
           <div class="player-bar" id="player-bar-top">
             <span class="player-bar-name" id="bar-top-name">-</span>
-            <span class="player-bar-stat">baseline <span id="bar-top-baseline">-</span></span>
-            <span class="player-bar-stat player-bar-current">now <span id="bar-top-current">-</span></span>
+            <span class="player-bar-stat">baseline <button type="button" class="info-icon" data-info-key="baseline" aria-label="What is the baseline rating?">i</button> <span id="bar-top-baseline">-</span></span>
+            <span class="player-bar-stat player-bar-actual" id="bar-top-actual-wrap" hidden>actual <button type="button" class="info-icon" data-info-key="actualRating" aria-label="What is the actual rating?">i</button> <span id="bar-top-actual">-</span></span>
+            <span class="player-bar-stat player-bar-current">now <button type="button" class="info-icon" data-info-key="ratingEstimate" aria-label="What is the rating estimate?">i</button> <span id="bar-top-current">-</span></span>
+            <span class="player-bar-stat player-bar-error" id="bar-top-error-wrap" hidden>off by <button type="button" class="info-icon" data-info-key="error" aria-label="What does off by mean?">i</button> <span id="bar-top-error">-</span></span>
           </div>
           <div id="board" class="chessboard"></div>
           <div class="player-bar" id="player-bar-bottom">
             <span class="player-bar-name" id="bar-bottom-name">-</span>
             <span class="player-bar-stat">baseline <span id="bar-bottom-baseline">-</span></span>
+            <span class="player-bar-stat player-bar-actual" id="bar-bottom-actual-wrap" hidden>actual <span id="bar-bottom-actual">-</span></span>
             <span class="player-bar-stat player-bar-current">now <span id="bar-bottom-current">-</span></span>
+            <span class="player-bar-stat player-bar-error" id="bar-bottom-error-wrap" hidden>off by <span id="bar-bottom-error">-</span></span>
           </div>
           <div class="board-controls">
             <button id="flip-board" title="Flip board">Flip</button>
@@ -169,10 +197,12 @@
               <span class="critical-marker-legend" aria-hidden="true">&starf;</span> marks a
               critical move (top by attention &times; rating deviation; plies before ply
               <span id="min-ply-caption">10</span> are excluded from ranking).
+              <button type="button" class="info-icon" data-info-key="criticalMove" aria-label="What is a critical move?">i</button>
             </p>
             <p id="synthetic-marker-legend" class="move-list-caption" hidden>
               <span class="synthetic-marker-legend" aria-hidden="true">&#9632;</span> marks a
               synthetic: engine moves inserted ply (ground truth from the synthetic corpus).
+              <button type="button" class="info-icon" data-info-key="syntheticMarkers" aria-label="What are these markers?">i</button>
             </p>
             <div id="move-list" class="move-list" role="list"></div>
           </div>
@@ -187,6 +217,11 @@
       </div>
     </section>
   </main>
+
+  <div id="info-popover" class="info-popover" role="tooltip" hidden>
+    <strong id="info-popover-term"></strong>
+    <p id="info-popover-text"></p>
+  </div>
 
   <footer class="app-footer">
     <p>

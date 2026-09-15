@@ -7,6 +7,66 @@ const API_BASE = "";
 // ordinary game landing near full.
 const SUSPICION_BAR_MAX = 400;
 const AUTOPLAY_INTERVAL_MS = 1000;
+const HIDE_ACTUAL_RATINGS_KEY = "ratingnet.hideActualRatings";
+
+// One or two short, plain-language sentences per metric. Kept as a single
+// object so wording can be edited in one place; used both for the (i)
+// popovers next to each label and for the "What do these numbers mean?"
+// collapsible section, in the same order as listed here.
+const METRIC_INFO = {
+  ratingEstimate: {
+    term: "Rating estimate",
+    text: "The model's current guess at this player's chess rating, updated after every move. It can move up or down as the model sees more of how each side plays.",
+  },
+  actualRating: {
+    term: "Actual rating",
+    text: "The player's real rating, taken from the source game's PGN header when it recorded one. It is shown only for comparison and never fed into the estimate.",
+  },
+  error: {
+    term: "Error (off by)",
+    text: "How far the current estimate is from the actual rating, in rating points. Positive means the model guessed higher than the real rating, negative means lower.",
+  },
+  baseline: {
+    term: "Baseline and its source",
+    text: "The pre-game rating the suspicion score compares each move against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess. The tag names which source was used.",
+  },
+  deviation: {
+    term: "Deviation from baseline",
+    text: "How many rating points this move's estimate differs from that side's baseline. Large deviations on moves the model paid a lot of attention to push the suspicion score up.",
+  },
+  attention: {
+    term: "Attention weight and rank",
+    text: "How much relative importance the model gave this move out of the whole game, and where that ranks among all moves. Higher attention means the move mattered more to the model's estimate.",
+  },
+  criticalMove: {
+    term: "Critical move",
+    text: "A move flagged for closer human review because it combines high attention with a large deviation from baseline. It is a pointer to look at, not a verdict.",
+  },
+  suspicion: {
+    term: "Suspicion score (S_att)",
+    text: "An attention-weighted average of how far a side's estimate strayed from its baseline over the whole game. It is a supplementary flag for human review, not proof of cheating: in thesis evaluation it separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).",
+  },
+  provisional: {
+    term: "Provisional badge",
+    text: "Shown when the source game has no final result yet (PGN Result header is \"*\"). The analysis covers only the moves played so far and can change as the game continues.",
+  },
+  liveVsFull: {
+    term: "Live estimate vs full-game analysis",
+    text: "The live curve freezes each move's estimate the instant it was computed from a from-scratch rerun up to that move, and never revises it later. Full-game analysis reruns the whole finished game at once and is the more accurate, final view.",
+  },
+  inferenceTime: {
+    term: "Per-move inference time",
+    text: "How long the model took to score the latest move on this deployment's hardware, shown while watching a live game. It reflects server load and hardware, not anything about the game itself.",
+  },
+  testError: {
+    term: "Saved test error",
+    text: "This sample's actual prediction error from the thesis's held-out test evaluation, saved ahead of time so it does not depend on this deployment. The thesis model was off by about 172 rating points on average across the full test set.",
+  },
+  syntheticMarkers: {
+    term: "Synthetic ground-truth markers",
+    text: "A square marker on the move list and chart marks a ply where this synthetic sample's move was swapped for a stronger engine's move, known for certain because the game was built that way. Real games never carry this marker.",
+  },
+};
 
 const state = {
   activeTab: "paste",
@@ -22,6 +82,8 @@ const state = {
   sampleMeta: null,
   substitutedPlies: new Set(),
   samplesManifest: null,
+  showActualRatings: true,
+  activeInfoIcon: null,
   live: {
     active: false,
     following: true,
@@ -36,6 +98,158 @@ const state = {
 
 function $(id) {
   return document.getElementById(id);
+}
+
+// --- Actual rating reveal/hide -------------------------------------------
+
+function actualRatingsVisible() {
+  return state.showActualRatings;
+}
+
+function loadHideActualRatingsPreference() {
+  try {
+    return window.localStorage.getItem(HIDE_ACTUAL_RATINGS_KEY) === "true";
+  } catch (err) {
+    return false;
+  }
+}
+
+function saveHideActualRatingsPreference(hidden) {
+  try {
+    window.localStorage.setItem(HIDE_ACTUAL_RATINGS_KEY, hidden ? "true" : "false");
+  } catch (err) {
+    // Storage unavailable (private browsing, quota, etc.); the choice just
+    // won't persist across reloads.
+  }
+}
+
+function formatSignedError(value) {
+  const rounded = Math.round(value);
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${rounded}`;
+}
+
+function maskedOrRounded(value) {
+  if (typeof value !== "number") return "-";
+  if (!actualRatingsVisible()) return "hidden";
+  return String(Math.round(value));
+}
+
+function actualAndErrorText(current, actual) {
+  if (typeof actual !== "number") return "not available";
+  if (!actualRatingsVisible()) return "hidden";
+  return `${Math.round(actual)} (off by ${formatSignedError(current - actual)})`;
+}
+
+function rerenderForActualRatingToggle() {
+  if (!state.result) return;
+  renderFinalErrorLine(state.result);
+  renderSuspicion(state.result);
+  renderChart(state.result);
+  renderPlayerBars(state.currentPly);
+  renderMetricsPanel(state.currentPly);
+  renderSampleMetaBox(state.sampleMeta);
+}
+
+function setActualRatingsHidden(hidden) {
+  state.showActualRatings = !hidden;
+  $("hide-actual-toggle").checked = hidden;
+  $("reveal-actual-button").hidden = !hidden;
+  saveHideActualRatingsPreference(hidden);
+  rerenderForActualRatingToggle();
+}
+
+function setupActualRatingToggle() {
+  const hidden = loadHideActualRatingsPreference();
+  state.showActualRatings = !hidden;
+  $("hide-actual-toggle").checked = hidden;
+  $("reveal-actual-button").hidden = !hidden;
+  $("hide-actual-toggle").addEventListener("change", (evt) => setActualRatingsHidden(evt.target.checked));
+  $("reveal-actual-button").addEventListener("click", () => setActualRatingsHidden(false));
+}
+
+// --- Info popovers ---------------------------------------------------------
+
+function infoIconHtml(key) {
+  const info = METRIC_INFO[key];
+  if (!info) return "";
+  return (
+    `<button type="button" class="info-icon" data-info-key="${key}" ` +
+    `aria-label="What is ${escapeHtml(info.term)}?">i</button>`
+  );
+}
+
+function showInfoPopover(iconEl) {
+  const info = METRIC_INFO[iconEl.dataset.infoKey];
+  if (!info) return;
+  const popover = $("info-popover");
+  $("info-popover-term").textContent = info.term;
+  $("info-popover-text").textContent = info.text;
+  popover.hidden = false;
+
+  const margin = 8;
+  const iconRect = iconEl.getBoundingClientRect();
+  popover.style.left = "0px";
+  popover.style.top = "0px";
+  const popRect = popover.getBoundingClientRect();
+  let left = Math.max(margin, Math.min(iconRect.left, window.innerWidth - popRect.width - margin));
+  let top = iconRect.bottom + margin;
+  if (top + popRect.height > window.innerHeight - margin) {
+    top = iconRect.top - popRect.height - margin;
+  }
+  popover.style.left = `${left}px`;
+  popover.style.top = `${Math.max(margin, top)}px`;
+
+  state.activeInfoIcon = iconEl;
+  iconEl.setAttribute("aria-expanded", "true");
+}
+
+function hideInfoPopover() {
+  $("info-popover").hidden = true;
+  if (state.activeInfoIcon) {
+    state.activeInfoIcon.setAttribute("aria-expanded", "false");
+    state.activeInfoIcon = null;
+  }
+}
+
+function setupInfoPopovers() {
+  document.addEventListener("click", (evt) => {
+    const icon = evt.target.closest(".info-icon");
+    if (icon) {
+      evt.stopPropagation();
+      showInfoPopover(icon);
+      return;
+    }
+    if (!evt.target.closest("#info-popover")) {
+      hideInfoPopover();
+    }
+  });
+  document.addEventListener("mouseover", (evt) => {
+    const icon = evt.target.closest(".info-icon");
+    if (icon) showInfoPopover(icon);
+  });
+  document.addEventListener("mouseout", (evt) => {
+    const icon = evt.target.closest(".info-icon");
+    if (icon && document.activeElement !== icon) hideInfoPopover();
+  });
+  document.addEventListener("focusin", (evt) => {
+    const icon = evt.target.closest(".info-icon");
+    if (icon) showInfoPopover(icon);
+  });
+  document.addEventListener("focusout", (evt) => {
+    const icon = evt.target.closest(".info-icon");
+    if (icon) hideInfoPopover();
+  });
+  document.addEventListener("keydown", (evt) => {
+    if (evt.key === "Escape") hideInfoPopover();
+  });
+}
+
+function renderMetricsGlossary() {
+  const container = $("metrics-glossary-list");
+  container.innerHTML = Object.values(METRIC_INFO)
+    .map((info) => `<dt>${escapeHtml(info.term)}</dt><dd>${escapeHtml(info.text)}</dd>`)
+    .join("");
 }
 
 function setupTabs() {
@@ -409,7 +623,9 @@ function renderResult(result, opts = {}) {
 
   $("live-badge").hidden = !opts.live;
   if (!opts.live) {
-    $("live-status-panel").hidden = true;
+    state.live.finished = false;
+    $("live-status-text").textContent = "";
+    syncLiveStatusPanelVisibility();
   }
 
   stopAutoplay();
@@ -426,6 +642,7 @@ function renderResult(result, opts = {}) {
   $("provisional-badge").hidden = !result.provisional;
   $("min-ply-caption").textContent = result.critical_moves_min_ply;
 
+  renderFinalErrorLine(result);
   renderWarnings(result.warnings || []);
   renderSuspicion(result);
   renderChart(result);
@@ -434,6 +651,32 @@ function renderResult(result, opts = {}) {
 
   $("input-panel").classList.add("collapsed");
   $("input-panel-toggle").setAttribute("aria-expanded", "false");
+}
+
+function renderFinalErrorLine(result) {
+  const el = $("results-error-line");
+  const whiteKnown = typeof result.white_actual_rating === "number";
+  const blackKnown = typeof result.black_actual_rating === "number";
+  if (!whiteKnown && !blackKnown) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const parts = [];
+  if (whiteKnown) {
+    const text = actualRatingsVisible()
+      ? formatSignedError(result.white_final_rating - result.white_actual_rating)
+      : "hidden";
+    parts.push(`White final error ${text}`);
+  }
+  if (blackKnown) {
+    const text = actualRatingsVisible()
+      ? formatSignedError(result.black_final_rating - result.black_actual_rating)
+      : "hidden";
+    parts.push(`Black final error ${text}`);
+  }
+  el.textContent = parts.join(" · ");
+  el.hidden = false;
 }
 
 function renderWarnings(warnings) {
@@ -461,31 +704,41 @@ function renderSampleMetaBox(sampleMeta) {
     .map((tag) => `<span class="sample-badge">${escapeHtml(tag)}</span>`)
     .join("");
 
+  const visible = actualRatingsVisible();
   const facts = [];
   if (typeof sampleMeta.white_actual_rating === "number") {
-    facts.push(`White actual rating ${Math.round(sampleMeta.white_actual_rating)}`);
+    facts.push(`White actual rating ${infoIconHtml("actualRating")} ${visible ? Math.round(sampleMeta.white_actual_rating) : "hidden"}`);
   }
   if (typeof sampleMeta.black_actual_rating === "number") {
-    facts.push(`Black actual rating ${Math.round(sampleMeta.black_actual_rating)}`);
+    facts.push(`Black actual rating ${visible ? Math.round(sampleMeta.black_actual_rating) : "hidden"}`);
   }
   if (typeof sampleMeta.white_test_error === "number") {
-    facts.push(`White saved test error ${sampleMeta.white_test_error.toFixed(1)} pts (compare to the estimate above)`);
+    const value = visible ? `${sampleMeta.white_test_error.toFixed(1)} pts` : "hidden";
+    facts.push(`White saved test error ${infoIconHtml("testError")} ${value} (compare to the estimate above)`);
   }
   if (typeof sampleMeta.black_test_error === "number") {
-    facts.push(`Black saved test error ${sampleMeta.black_test_error.toFixed(1)} pts (compare to the estimate above)`);
+    const value = visible ? `${sampleMeta.black_test_error.toFixed(1)} pts` : "hidden";
+    facts.push(`Black saved test error ${value} (compare to the estimate above)`);
   }
   if (typeof sampleMeta.substitution_rate === "number") {
     facts.push(`${Math.round(sampleMeta.substitution_rate * 100)}% of moves substituted`);
   }
   if (sampleMeta.maia_band) {
-    facts.push(`Maia band ${sampleMeta.maia_band}`);
+    facts.push(`Maia band ${escapeHtml(String(sampleMeta.maia_band))}`);
   }
   if (sampleMeta.engine) {
-    facts.push(`Substitution engine: ${sampleMeta.engine}`);
+    facts.push(`Substitution engine: ${escapeHtml(sampleMeta.engine)}`);
   }
   if (typeof sampleMeta.s_att_eval === "number") {
     facts.push(`Saved suspicion score (S_att) ${sampleMeta.s_att_eval.toFixed(1)} (compare to the bars above)`);
   }
+
+  const syntheticNote = sampleMeta.maia_band
+    ? `<p class="sample-meta-description">Both sides can score high on this synthetic sample because the rating ` +
+      `model reads Maia ${escapeHtml(String(sampleMeta.maia_band))}'s play as coming from a much stronger player ` +
+      `than its nominal band; that mismatch is the known reason the computed suspicion score is weak here. The move ` +
+      `list and chart mark the side with engine moves inserted. ${infoIconHtml("syntheticMarkers")}</p>`
+    : "";
 
   box.innerHTML = `
     <div class="sample-meta-header">
@@ -493,7 +746,8 @@ function renderSampleMetaBox(sampleMeta) {
       ${tags}
     </div>
     ${sampleMeta.description ? `<p class="sample-meta-description">${escapeHtml(sampleMeta.description)}</p>` : ""}
-    ${facts.length ? `<p class="sample-meta-facts">${facts.map(escapeHtml).join(" &middot; ")}</p>` : ""}
+    ${syntheticNote}
+    ${facts.length ? `<p class="sample-meta-facts">${facts.join(" &middot; ")}</p>` : ""}
   `;
   box.hidden = false;
 }
@@ -513,8 +767,8 @@ function renderSuspicion(result) {
   $("white-suspicion-value").textContent = whiteScore.toFixed(1);
   $("black-suspicion-value").textContent = blackScore.toFixed(1);
 
-  $("white-baseline-source").textContent = `${result.white_baseline} (${formatSource(result.white_baseline_source)})`;
-  $("black-baseline-source").textContent = `${result.black_baseline} (${formatSource(result.black_baseline_source)})`;
+  $("white-baseline-source").textContent = `${maskedOrRounded(result.white_baseline)} (${formatSource(result.white_baseline_source)})`;
+  $("black-baseline-source").textContent = `${maskedOrRounded(result.black_baseline)} (${formatSource(result.black_baseline_source)})`;
 
   $("white-suspicion-explain").textContent =
     `About ${Math.round(whiteScore)} rating points of attention-weighted gap between the ` +
@@ -623,13 +877,91 @@ function buildSyncPlugin() {
   };
 }
 
+function buildReferenceLineDatasets(side, color, baseline, actual, labels) {
+  // Baseline and actual-rating reference lines are only plotted while
+  // reveal mode is on: while hidden, omitting them entirely (rather than
+  // masking their values) is what makes the chart usable for a
+  // guess-the-rating demo.
+  if (!actualRatingsVisible()) return [];
+
+  const actualKnown = typeof actual === "number";
+  const matchesBaseline = actualKnown && Math.abs(actual - baseline) < 0.5;
+  const baselineLine = labels.map(() => baseline);
+
+  if (matchesBaseline) {
+    return [
+      {
+        label: `${side} actual rating (baseline)`,
+        data: baselineLine,
+        borderColor: color.baseline,
+        borderDash: [6, 4],
+        borderWidth: 1,
+        pointRadius: 0,
+      },
+    ];
+  }
+
+  const datasets = [
+    {
+      label: `${side} baseline`,
+      data: baselineLine,
+      borderColor: color.baseline,
+      borderDash: [6, 4],
+      borderWidth: 1,
+      pointRadius: 0,
+    },
+  ];
+  if (actualKnown) {
+    datasets.push({
+      label: `${side} actual rating`,
+      data: labels.map(() => actual),
+      borderColor: color.actual,
+      borderDash: [2, 2],
+      borderWidth: 1.5,
+      pointRadius: 0,
+    });
+  }
+  return datasets;
+}
+
 function renderChart(result) {
   const perMove = result.per_move;
   const labels = [0, ...perMove.map((m) => m.ply)];
   const whiteRatings = [result.white_baseline, ...perMove.map((m) => m.white_rating)];
   const blackRatings = [result.black_baseline, ...perMove.map((m) => m.black_rating)];
-  const whiteBaselineLine = labels.map(() => result.white_baseline);
-  const blackBaselineLine = labels.map(() => result.black_baseline);
+
+  const datasets = [
+    {
+      label: "White rating estimate",
+      data: whiteRatings,
+      borderColor: "#3a6ea5",
+      backgroundColor: "transparent",
+      pointRadius: 0,
+      borderWidth: 2,
+    },
+    {
+      label: "Black rating estimate",
+      data: blackRatings,
+      borderColor: "#a54a3a",
+      backgroundColor: "transparent",
+      pointRadius: 0,
+      borderWidth: 2,
+    },
+    ...buildReferenceLineDatasets(
+      "White",
+      { baseline: "#3a6ea5", actual: "#1c4a73" },
+      result.white_baseline,
+      result.white_actual_rating,
+      labels
+    ),
+    ...buildReferenceLineDatasets(
+      "Black",
+      { baseline: "#a54a3a", actual: "#7a3527" },
+      result.black_baseline,
+      result.black_actual_rating,
+      labels
+    ),
+  ];
 
   const ctx = $("rating-chart").getContext("2d");
   if (state.chart) {
@@ -637,43 +969,7 @@ function renderChart(result) {
   }
   state.chart = new window.Chart(ctx, {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "White rating estimate",
-          data: whiteRatings,
-          borderColor: "#3a6ea5",
-          backgroundColor: "transparent",
-          pointRadius: 0,
-          borderWidth: 2,
-        },
-        {
-          label: "Black rating estimate",
-          data: blackRatings,
-          borderColor: "#a54a3a",
-          backgroundColor: "transparent",
-          pointRadius: 0,
-          borderWidth: 2,
-        },
-        {
-          label: "White baseline",
-          data: whiteBaselineLine,
-          borderColor: "#3a6ea5",
-          borderDash: [6, 4],
-          borderWidth: 1,
-          pointRadius: 0,
-        },
-        {
-          label: "Black baseline",
-          data: blackBaselineLine,
-          borderColor: "#a54a3a",
-          borderDash: [6, 4],
-          borderWidth: 1,
-          pointRadius: 0,
-        },
-      ],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -738,8 +1034,18 @@ function renderPlayerBars(ply) {
   const blackCurrent = ply === 0 ? result.black_baseline : result.per_move[ply - 1].black_rating;
 
   const perSide = {
-    white: { name: whiteName, baseline: result.white_baseline, current: whiteCurrent },
-    black: { name: blackName, baseline: result.black_baseline, current: blackCurrent },
+    white: {
+      name: whiteName,
+      baseline: result.white_baseline,
+      current: whiteCurrent,
+      actual: result.white_actual_rating,
+    },
+    black: {
+      name: blackName,
+      baseline: result.black_baseline,
+      current: blackCurrent,
+      actual: result.black_actual_rating,
+    },
   };
 
   const orientation = state.board.orientation();
@@ -752,8 +1058,18 @@ function renderPlayerBars(ply) {
 
 function setPlayerBar(position, info) {
   $(`bar-${position}-name`).textContent = info.name;
-  $(`bar-${position}-baseline`).textContent = Math.round(info.baseline);
+  $(`bar-${position}-baseline`).textContent = maskedOrRounded(info.baseline);
   $(`bar-${position}-current`).textContent = Math.round(info.current);
+
+  const actualKnown = typeof info.actual === "number";
+  $(`bar-${position}-actual-wrap`).hidden = !actualKnown;
+  $(`bar-${position}-error-wrap`).hidden = !actualKnown;
+  if (actualKnown) {
+    $(`bar-${position}-actual`).textContent = maskedOrRounded(info.actual);
+    $(`bar-${position}-error`).textContent = actualRatingsVisible()
+      ? formatSignedError(info.current - info.actual)
+      : "hidden";
+  }
 }
 
 function formatDelta(delta) {
@@ -772,8 +1088,10 @@ function renderMetricsPanel(ply) {
     container.innerHTML = `
       <p class="metrics-move-label">Start of game</p>
       <dl class="metrics-grid">
-        <dt>White baseline</dt><dd>${Math.round(result.white_baseline)}</dd>
-        <dt>Black baseline</dt><dd>${Math.round(result.black_baseline)}</dd>
+        <dt>White baseline ${infoIconHtml("baseline")}</dt><dd>${maskedOrRounded(result.white_baseline)}</dd>
+        <dt>Black baseline</dt><dd>${maskedOrRounded(result.black_baseline)}</dd>
+        <dt>White actual / error ${infoIconHtml("actualRating")}</dt><dd>${actualAndErrorText(result.white_baseline, result.white_actual_rating)}</dd>
+        <dt>Black actual / error</dt><dd>${actualAndErrorText(result.black_baseline, result.black_actual_rating)}</dd>
       </dl>
       <p class="metrics-hint">Step forward to see per-move rating estimates and attention.</p>
     `;
@@ -803,15 +1121,21 @@ function renderMetricsPanel(ply) {
   }
   const criticalText = criticalLines.length ? criticalLines.join(", ") : "not flagged as critical";
 
+  const visible = actualRatingsVisible();
+  const whiteDeviationText = visible ? move.white_deviation.toFixed(1) : "hidden";
+  const blackDeviationText = visible ? move.black_deviation.toFixed(1) : "hidden";
+
   container.innerHTML = `
     <p class="metrics-move-label">Ply ${ply} &middot; ${sideToMove} played ${escapeHtml(move.move || "?")}</p>
     <dl class="metrics-grid">
-      <dt>White estimate</dt><dd>${Math.round(move.white_rating)}${formatDelta(whiteDelta)}</dd>
+      <dt>White estimate ${infoIconHtml("ratingEstimate")}</dt><dd>${Math.round(move.white_rating)}${formatDelta(whiteDelta)}</dd>
       <dt>Black estimate</dt><dd>${Math.round(move.black_rating)}${formatDelta(blackDelta)}</dd>
-      <dt>White deviation from baseline</dt><dd>${move.white_deviation.toFixed(1)}</dd>
-      <dt>Black deviation from baseline</dt><dd>${move.black_deviation.toFixed(1)}</dd>
-      <dt>Attention</dt><dd>${attentionLine}</dd>
-      <dt>Critical move</dt><dd>${criticalText}</dd>
+      <dt>White actual / error ${infoIconHtml("actualRating")}</dt><dd>${actualAndErrorText(move.white_rating, result.white_actual_rating)}</dd>
+      <dt>Black actual / error</dt><dd>${actualAndErrorText(move.black_rating, result.black_actual_rating)}</dd>
+      <dt>White deviation from baseline ${infoIconHtml("deviation")}</dt><dd>${whiteDeviationText}</dd>
+      <dt>Black deviation from baseline</dt><dd>${blackDeviationText}</dd>
+      <dt>Attention ${infoIconHtml("attention")}</dt><dd>${attentionLine}</dd>
+      <dt>Critical move ${infoIconHtml("criticalMove")}</dt><dd>${criticalText}</dd>
     </dl>
   `;
 }
@@ -1027,12 +1351,20 @@ function setLiveStatusText(text) {
   updateLiveButtons();
 }
 
+function syncLiveStatusPanelVisibility() {
+  // Content-driven, not just state-driven: an empty panel (e.g. a "finished"
+  // flag left over from a previous live session) must never show above an
+  // unrelated result such as a freshly loaded sample game.
+  const hasContent = $("live-status-text").textContent.trim().length > 0;
+  $("live-status-panel").hidden = !hasContent;
+}
+
 function updateLiveButtons() {
   $("live-stop-button").hidden = !state.live.active;
   $("live-follow-button").disabled = state.live.active;
   $("live-tv-button").disabled = state.live.active;
 
-  $("live-status-panel").hidden = !(state.live.active || state.live.finished);
+  syncLiveStatusPanelVisibility();
   $("jump-to-live").hidden = !state.live.active || state.live.following;
   $("show-full-analysis").hidden = !state.live.finished || !state.live.gameId;
   $("stop-live").hidden = !state.live.active;
@@ -1194,6 +1526,9 @@ function init() {
   setupChartPointerNav();
   setupKeyboardNav();
   setupLiveControls();
+  setupActualRatingToggle();
+  setupInfoPopovers();
+  renderMetricsGlossary();
   $("submit-button").addEventListener("click", submitAnalysis);
 }
 

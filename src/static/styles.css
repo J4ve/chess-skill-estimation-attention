@@ -356,6 +356,15 @@ textarea {
   gap: 0.5rem;
 }
 
+/* The unconditional `display: flex` above otherwise beats the browser's
+   default `[hidden] { display: none }` rule (an author rule always wins
+   over the UA stylesheet), so the `hidden` attribute alone never actually
+   hid this panel; it showed as an empty green bar whenever nothing live
+   was streaming. */
+.live-status-panel[hidden] {
+  display: none;
+}
+
 .live-status-text {
   margin: 0;
   font-size: 0.85rem;
@@ -505,7 +514,8 @@ textarea {
 .player-bar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
   padding: 0.3rem 0.1rem;
   font-size: 0.85rem;
 }
@@ -707,6 +717,142 @@ textarea {
   height: 100% !important;
 }
 
+/* --- Actual rating reveal/hide toggle ------------------------------- */
+
+.actual-rating-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.reveal-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.reveal-switch-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.results-error-line {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.player-bar-actual,
+.player-bar-error {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Info icons and popover ------------------------------------------ */
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  vertical-align: middle;
+  margin-left: 0.15rem;
+}
+
+.info-icon:hover,
+.info-icon:focus-visible {
+  background: var(--accent);
+  border-color: var(--accent-dark);
+  color: #fff;
+  outline: none;
+}
+
+.info-popover {
+  position: fixed;
+  z-index: 50;
+  max-width: 260px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.info-popover strong {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.2rem;
+}
+
+.info-popover p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.metrics-glossary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.85rem;
+}
+
+.metrics-glossary summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.2rem 0;
+}
+
+.metrics-glossary-list {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+  row-gap: 0.5rem;
+  column-gap: 0.75rem;
+  margin: 0.6rem 0 0;
+}
+
+.metrics-glossary-list dt {
+  font-weight: 600;
+}
+
+.metrics-glossary-list dd {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.suspicion-heading {
+  font-size: 1.05rem;
+  margin: 0 0 0.4rem;
+}
+
+.live-status-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin: 0 0 0.2rem;
+}
+
 .app-footer {
   max-width: 1100px;
   margin: 0 auto;
@@ -762,5 +908,13 @@ textarea {
 
   .chart-canvas-wrap {
     height: 260px;
+  }
+
+  .metrics-glossary-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metrics-glossary-list dd {
+    margin-bottom: 0.3rem;
   }
 }
