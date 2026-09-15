@@ -1,0 +1,60 @@
+{
+  "score": "s_att",
+  "generated_date": "2026-09-15",
+  "checkpoint": "models/preflight_check_2m/best_model.pth",
+  "checkpoint_md5": "fcb38b8a6a3ee04a6b1859dd5bc69b75",
+  "provisional": true,
+  "provisional_note": "PROVISIONAL: based on 1200 scored held-out test games (2400 sides), not the full ~2,700-game stratified sample (bullet/blitz/rapid target ~600 each, classical/ultrabullet take their whole pool). The full run was stopped early for a scheduling reason and is queued to resume; this file will be regenerated and this flag cleared when it completes. Treat per-time-control cutoffs for any bucket below the sides threshold as unstable estimates.",
+  "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout), scored with the exact model + AnomalyDetector code path the RatingNet web prototype uses. The model never trained on these games.",
+  "note": "These cutoffs describe how S_att is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: in thesis evaluation S_att separated engine-substituted synthetic games only weakly (ROC-AUC 0.555), and a clean synthetic game scored 1097 on this same scale.",
+  "bootstrap_resamples": 2000,
+  "min_sides_for_time_control_cutoff": 300,
+  "overall": {
+    "n_sides": 2400,
+    "p75": 339.52,
+    "p75_ci": [
+      329.04,
+      350.14
+    ],
+    "p95": 573.83,
+    "p95_ci": [
+      541.13,
+      594.16
+    ]
+  },
+  "by_time_control": {
+    "blitz": {
+      "n_sides": 1142,
+      "p75": 367.88,
+      "p75_ci": [
+        353.46,
+        381.64
+      ],
+      "p95": 591.64,
+      "p95_ci": [
+        570.57,
+        621.1
+      ],
+      "use_overall": false
+    },
+    "bullet": {
+      "n_sides": 1148,
+      "p75": 297.91,
+      "p75_ci": [
+        289.43,
+        318.05
+      ],
+      "p95": 524.38,
+      "p95_ci": [
+        474.31,
+        553.15
+      ],
+      "use_overall": false
+    },
+    "rapid": {
+      "n_sides": 110,
+      "use_overall": true,
+      "reason": "fewer than 300 sides"
+    }
+  }
+}
