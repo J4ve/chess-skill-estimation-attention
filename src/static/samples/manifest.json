@@ -1,0 +1,21 @@
+{
+  "schema_notes": "Each entry describes one sample game for the picker. Required: id, title, description, pgn_path (relative to src/static/samples/). Optional: time_control, white_rating, black_rating (display-only, usually from the PGN headers). Optional fields for thesis-corpus provenance: source ('test partition' or 'synthetic corpus'), selection_label (one of 'best-predicted', 'typical', 'worst-predicted', 'synthetic: caught', 'synthetic: false alarm', 'synthetic: missed'), white_test_error / black_test_error (this game's held-out test MAE in rating points, per side), white_actual_rating / black_actual_rating (ground-truth rating used for evaluation, which may differ from any PGN Elo header). substituted_plies (array of 1-indexed plies) marks engine-substituted moves for a synthetic-corpus game as ground truth on the board and chart; leave empty for a real game.",
+  "samples": [
+    {
+      "id": "placeholder-ultrabullet",
+      "title": "Placeholder sample game",
+      "description": "Temporary placeholder while real thesis-corpus PGNs are added to this manifest; a finished ultraBullet game.",
+      "pgn_path": "samples/lichess_Qhzw8ohh.pgn",
+      "time_control": "15+0",
+      "white_rating": 1979,
+      "black_rating": 1759,
+      "source": null,
+      "selection_label": null,
+      "white_test_error": null,
+      "black_test_error": null,
+      "white_actual_rating": null,
+      "black_actual_rating": null,
+      "substituted_plies": []
+    }
+  ]
+}

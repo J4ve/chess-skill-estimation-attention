@@ -19,6 +19,19 @@ const state = {
   attentionRanks: new Map(),
   criticalByPly: new Map(),
   criticalCounts: { white: 0, black: 0 },
+  sampleMeta: null,
+  substitutedPlies: new Set(),
+  samplesManifest: null,
+  live: {
+    active: false,
+    following: true,
+    mode: null, // "game" | "tv"
+    gameId: null,
+    finished: false,
+    eventSource: null,
+    frozenPerMove: [],
+    reconnectAttempts: 0,
+  },
 };
 
 function $(id) {
@@ -38,7 +51,13 @@ function setupTabs() {
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.classList.toggle("active", panel.dataset.panel === tab);
       });
+      // Samples and Live have their own load/watch controls instead of the
+      // shared "Analyze game" button.
+      $("submit-button").hidden = tab === "samples" || tab === "live";
       clearError();
+      if (tab === "samples") {
+        loadSamplesManifest();
+      }
     });
   });
 }
@@ -88,6 +107,128 @@ async function parseErrorDetail(response) {
   }
 }
 
+async function loadSamplesManifest() {
+  if (state.samplesManifest) {
+    renderSamplesGrid(state.samplesManifest.samples || []);
+    return;
+  }
+  const statusEl = $("samples-status");
+  statusEl.hidden = false;
+  statusEl.textContent = "Loading samples...";
+  try {
+    const response = await fetch(`${API_BASE}/static/samples/manifest.json`);
+    if (!response.ok) {
+      throw new Error(`Could not load sample manifest (status ${response.status}).`);
+    }
+    const manifest = await response.json();
+    state.samplesManifest = manifest;
+    renderSamplesGrid(manifest.samples || []);
+  } catch (err) {
+    statusEl.hidden = false;
+    statusEl.textContent = `Could not load samples: ${err.message || err}`;
+  }
+}
+
+function sampleBadgeLabel(sample) {
+  const bits = [];
+  if (sample.time_control) bits.push(sample.time_control);
+  if (typeof sample.white_rating === "number" && typeof sample.black_rating === "number") {
+    bits.push(`${Math.round(sample.white_rating)} vs ${Math.round(sample.black_rating)}`);
+  }
+  return bits.join(" · ");
+}
+
+function buildSampleCard(sample) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "sample-card";
+  card.dataset.sampleId = sample.id;
+
+  const title = document.createElement("div");
+  title.className = "sample-card-title";
+  title.textContent = sample.title || sample.id;
+  card.appendChild(title);
+
+  const badgeLine = sampleBadgeLabel(sample);
+  if (badgeLine) {
+    const badge = document.createElement("div");
+    badge.className = "sample-card-badge-line";
+    badge.textContent = badgeLine;
+    card.appendChild(badge);
+  }
+
+  if (sample.description) {
+    const desc = document.createElement("div");
+    desc.className = "sample-card-description";
+    desc.textContent = sample.description;
+    card.appendChild(desc);
+  }
+
+  const tags = [];
+  if (sample.source) tags.push(sample.source);
+  if (sample.selection_label) tags.push(sample.selection_label);
+  if (tags.length) {
+    const tagRow = document.createElement("div");
+    tagRow.className = "sample-card-tags";
+    tags.forEach((tag) => {
+      const span = document.createElement("span");
+      span.className = "sample-tag";
+      span.textContent = tag;
+      tagRow.appendChild(span);
+    });
+    card.appendChild(tagRow);
+  }
+
+  card.addEventListener("click", () => loadAndAnalyzeSample(sample, card));
+  return card;
+}
+
+function renderSamplesGrid(samples) {
+  const grid = $("samples-grid");
+  const statusEl = $("samples-status");
+  grid.innerHTML = "";
+  if (!samples.length) {
+    statusEl.hidden = false;
+    statusEl.textContent = "No sample games are available yet.";
+    return;
+  }
+  statusEl.hidden = true;
+  samples.forEach((sample) => grid.appendChild(buildSampleCard(sample)));
+}
+
+async function loadAndAnalyzeSample(sample, cardEl) {
+  clearError();
+  stopLiveStream();
+  const topK = currentTopK();
+  const minPly = currentMinPly();
+  const grid = $("samples-grid");
+  grid.classList.add("loading");
+  if (cardEl) cardEl.setAttribute("aria-busy", "true");
+  try {
+    const pgnResponse = await fetch(`${API_BASE}/static/${sample.pgn_path}`);
+    if (!pgnResponse.ok) {
+      throw new Error(`Could not load sample PGN (status ${pgnResponse.status}).`);
+    }
+    const pgnText = await pgnResponse.text();
+    const query = `top_k=${topK}&min_ply=${minPly}`;
+    const response = await fetch(`${API_BASE}/predict/pgn?${query}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pgn: pgnText }),
+    });
+    if (!response.ok) {
+      throw new Error(await parseErrorDetail(response));
+    }
+    const result = await response.json();
+    renderResult(result, { sampleMeta: sample });
+  } catch (err) {
+    showError(err.message || String(err));
+  } finally {
+    grid.classList.remove("loading");
+    if (cardEl) cardEl.removeAttribute("aria-busy");
+  }
+}
+
 function currentTopK() {
   const raw = parseInt($("top-k").value, 10);
   if (Number.isNaN(raw) || raw < 1) return 5;
@@ -111,6 +252,7 @@ function currentBaselines() {
 
 async function submitAnalysis() {
   clearError();
+  stopLiveStream();
   const topK = currentTopK();
   const minPly = currentMinPly();
   const baselines = currentBaselines();
@@ -227,7 +369,7 @@ function buildCriticalIndex(criticalMoves) {
   return { map, counts };
 }
 
-function renderResult(result) {
+function renderResult(result, opts = {}) {
   state.result = result;
   state.fenAtPly = buildFenTimeline(result.headers, result.per_move);
   state.currentPly = state.fenAtPly.length - 1;
@@ -236,6 +378,16 @@ function renderResult(result) {
   const criticalIndex = buildCriticalIndex(result.critical_moves || []);
   state.criticalByPly = criticalIndex.map;
   state.criticalCounts = criticalIndex.counts;
+
+  state.sampleMeta = opts.sampleMeta || null;
+  state.substitutedPlies = new Set((state.sampleMeta && state.sampleMeta.substituted_plies) || []);
+  renderSampleMetaBox(state.sampleMeta);
+  $("synthetic-marker-legend").hidden = state.substitutedPlies.size === 0;
+
+  $("live-badge").hidden = !opts.live;
+  if (!opts.live) {
+    $("live-status-panel").hidden = true;
+  }
 
   stopAutoplay();
 
@@ -271,6 +423,44 @@ function renderWarnings(warnings) {
   box.hidden = false;
   const items = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("");
   box.innerHTML = `<strong>Warnings</strong><ul>${items}</ul>`;
+}
+
+function renderSampleMetaBox(sampleMeta) {
+  const box = $("sample-meta-box");
+  if (!sampleMeta) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+
+  const tags = [sampleMeta.source, sampleMeta.selection_label]
+    .filter(Boolean)
+    .map((tag) => `<span class="sample-badge">${escapeHtml(tag)}</span>`)
+    .join("");
+
+  const facts = [];
+  if (typeof sampleMeta.white_actual_rating === "number") {
+    facts.push(`White actual rating ${Math.round(sampleMeta.white_actual_rating)}`);
+  }
+  if (typeof sampleMeta.black_actual_rating === "number") {
+    facts.push(`Black actual rating ${Math.round(sampleMeta.black_actual_rating)}`);
+  }
+  if (typeof sampleMeta.white_test_error === "number") {
+    facts.push(`White test error ${sampleMeta.white_test_error.toFixed(1)}`);
+  }
+  if (typeof sampleMeta.black_test_error === "number") {
+    facts.push(`Black test error ${sampleMeta.black_test_error.toFixed(1)}`);
+  }
+
+  box.innerHTML = `
+    <div class="sample-meta-header">
+      <strong>${escapeHtml(sampleMeta.title || "Sample game")}</strong>
+      ${tags}
+    </div>
+    ${sampleMeta.description ? `<p class="sample-meta-description">${escapeHtml(sampleMeta.description)}</p>` : ""}
+    ${facts.length ? `<p class="sample-meta-facts">${facts.map(escapeHtml).join(" &middot; ")}</p>` : ""}
+  `;
+  box.hidden = false;
 }
 
 function escapeHtml(text) {
@@ -343,6 +533,26 @@ function buildSyncPlugin() {
           ctx.restore();
         });
       });
+
+      // Square markers for synthetic (engine-substituted) plies, on both curves.
+      if (state.substitutedPlies.size) {
+        [0, 1].forEach((dsIndex) => {
+          const meta = chart.getDatasetMeta(dsIndex);
+          if (!meta || !meta.data) return;
+          state.substitutedPlies.forEach((substitutedPly) => {
+            const point = meta.data[substitutedPly];
+            if (!point) return;
+            const half = 4;
+            ctx.save();
+            ctx.fillStyle = "#e0a82f";
+            ctx.fillRect(point.x - half, point.y - half, half * 2, half * 2);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "#8a6a12";
+            ctx.strokeRect(point.x - half, point.y - half, half * 2, half * 2);
+            ctx.restore();
+          });
+        });
+      }
 
       // Vertical line at the current ply.
       const meta0 = chart.getDatasetMeta(0);
@@ -590,6 +800,10 @@ function buildMoveCell(move, side) {
     btn.classList.add("critical");
     btn.title = "Critical move";
   }
+  if (state.substitutedPlies.has(move.ply)) {
+    btn.classList.add("synthetic");
+    btn.title = btn.title ? `${btn.title}; synthetic: engine move inserted` : "Synthetic: engine move inserted";
+  }
   btn.textContent = move.move || "?";
   btn.addEventListener("click", () => renderBoardAtPly(move.ply));
   return btn;
@@ -654,6 +868,11 @@ function renderBoardAtPly(ply, opts = {}) {
   markActiveMoveListEntry(clamped);
   if (state.chart) {
     state.chart.update("none");
+  }
+
+  if (state.live.active) {
+    state.live.following = clamped === state.fenAtPly.length - 1;
+    updateLiveButtons();
   }
 }
 
@@ -738,6 +957,200 @@ function setupKeyboardNav() {
   });
 }
 
+// --- Live mode -----------------------------------------------------------
+//
+// Every SSE "update" carries a fresh, non-causal rerun of the whole prefix
+// (see README "Live mode"), so only its *last* per-move row is new
+// information; earlier rows would differ slightly run to run. To keep the
+// chart from revising history, mergeLiveUpdate() accumulates a frozen
+// client-side per_move array (only ever appended to) and renderResult() is
+// then reused unmodified against that frozen array, exactly as it renders a
+// batch result.
+
+function extractLichessGameId(raw) {
+  const trimmed = (raw || "").trim();
+  const urlMatch = trimmed.match(/lichess\.org\/(?:embed\/)?([A-Za-z0-9]{8})(?:[/?#]|$)/);
+  if (urlMatch) return urlMatch[1];
+  if (/^[A-Za-z0-9]{8}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+function mergeLiveUpdate(result) {
+  const frozen = state.live.frozenPerMove;
+  const incoming = result.per_move || [];
+  for (let i = frozen.length; i < incoming.length; i++) {
+    frozen.push(incoming[i]);
+  }
+  return { ...result, per_move: frozen };
+}
+
+function setLiveStatusText(text) {
+  const inputLine = $("live-status-line");
+  inputLine.hidden = false;
+  inputLine.textContent = text;
+  $("live-status-text").textContent = text;
+  updateLiveButtons();
+}
+
+function updateLiveButtons() {
+  $("live-stop-button").hidden = !state.live.active;
+  $("live-follow-button").disabled = state.live.active;
+  $("live-tv-button").disabled = state.live.active;
+
+  $("live-status-panel").hidden = !(state.live.active || state.live.finished);
+  $("jump-to-live").hidden = !state.live.active || state.live.following;
+  $("show-full-analysis").hidden = !state.live.finished || !state.live.gameId;
+  $("stop-live").hidden = !state.live.active;
+}
+
+function closeLiveEventSourceQuietly() {
+  if (state.live.eventSource) {
+    state.live.eventSource.onerror = null;
+    state.live.eventSource.onmessage = null;
+    state.live.eventSource.close();
+    state.live.eventSource = null;
+  }
+}
+
+function stopLiveStream() {
+  if (!state.live.active && !state.live.eventSource) return;
+  closeLiveEventSourceQuietly();
+  state.live.active = false;
+  updateLiveButtons();
+}
+
+function handleLiveMessage(payload) {
+  if (payload.type === "status") {
+    setLiveStatusText(payload.message || payload.state);
+    if (payload.state === "finished") {
+      state.live.finished = true;
+      closeLiveEventSourceQuietly();
+      state.live.active = false;
+      updateLiveButtons();
+    }
+    return;
+  }
+
+  if (payload.type === "error") {
+    setLiveStatusText(`Error: ${payload.detail}`);
+    closeLiveEventSourceQuietly();
+    state.live.active = false;
+    updateLiveButtons();
+    return;
+  }
+
+  if (payload.type === "update") {
+    const result = payload.result;
+    if (state.live.gameId && result.lichess_game_id && result.lichess_game_id !== state.live.gameId) {
+      // Lichess TV switched to a new game: start a fresh frozen history.
+      state.live.frozenPerMove = [];
+      state.live.following = true;
+    }
+    state.live.gameId = result.lichess_game_id || state.live.gameId;
+
+    const merged = mergeLiveUpdate(result);
+    const wasFollowing = state.live.following;
+    const previousPly = state.currentPly;
+    renderResult(merged, { live: true });
+    if (!wasFollowing) {
+      renderBoardAtPly(Math.min(previousPly, state.fenAtPly.length - 1));
+    }
+    const timingNote = typeof result.inference_ms === "number" ? ` Last move scored in ${Math.round(result.inference_ms)} ms.` : "";
+    setLiveStatusText(`Connected.${timingNote}`);
+  }
+}
+
+function connectLiveEventSource() {
+  const topK = currentTopK();
+  const minPly = currentMinPly();
+  const url =
+    state.live.mode === "game"
+      ? `${API_BASE}/live/stream/${encodeURIComponent(state.live.gameId)}?top_k=${topK}&min_ply=${minPly}`
+      : `${API_BASE}/live/tv?top_k=${topK}&min_ply=${minPly}`;
+
+  setLiveStatusText("Connecting...");
+  const source = new EventSource(url);
+  state.live.eventSource = source;
+  source.onmessage = (evt) => {
+    try {
+      handleLiveMessage(JSON.parse(evt.data));
+    } catch (err) {
+      // Malformed event; ignore this one and keep the stream open.
+    }
+  };
+  source.onerror = () => {
+    if (!state.live.active) return;
+    source.close();
+    if (state.live.reconnectAttempts < 1) {
+      state.live.reconnectAttempts += 1;
+      setLiveStatusText("Connection lost; reconnecting...");
+      connectLiveEventSource();
+    } else {
+      setLiveStatusText("Connection lost and could not reconnect. Stop and try again.");
+      state.live.active = false;
+      updateLiveButtons();
+    }
+  };
+}
+
+function startLiveWatch(mode, gameId) {
+  stopLiveStream();
+  state.live.active = true;
+  state.live.mode = mode;
+  state.live.gameId = gameId || null;
+  state.live.following = true;
+  state.live.finished = false;
+  state.live.frozenPerMove = [];
+  state.live.reconnectAttempts = 0;
+  updateLiveButtons();
+  connectLiveEventSource();
+}
+
+async function loadFullGameAnalysisForLiveGame() {
+  if (!state.live.gameId) return;
+  clearError();
+  const topK = currentTopK();
+  const minPly = currentMinPly();
+  setLiveStatusText("Loading full-game analysis...");
+  try {
+    const response = await fetch(`${API_BASE}/predict/lichess?top_k=${topK}&min_ply=${minPly}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game_id: state.live.gameId }),
+    });
+    if (!response.ok) {
+      throw new Error(await parseErrorDetail(response));
+    }
+    const result = await response.json();
+    state.live.finished = false;
+    closeLiveEventSourceQuietly();
+    $("live-status-panel").hidden = true;
+    renderResult(result);
+  } catch (err) {
+    showError(err.message || String(err));
+  }
+}
+
+function setupLiveControls() {
+  $("live-follow-button").addEventListener("click", () => {
+    const gameId = extractLichessGameId($("live-lichess-id").value);
+    if (!gameId) {
+      showError("Enter a valid Lichess game ID or URL first.");
+      return;
+    }
+    clearError();
+    startLiveWatch("game", gameId);
+  });
+  $("live-tv-button").addEventListener("click", () => {
+    clearError();
+    startLiveWatch("tv", null);
+  });
+  $("live-stop-button").addEventListener("click", stopLiveStream);
+  $("stop-live").addEventListener("click", stopLiveStream);
+  $("jump-to-live").addEventListener("click", () => renderBoardAtPly(state.fenAtPly.length - 1));
+  $("show-full-analysis").addEventListener("click", loadFullGameAnalysisForLiveGame);
+}
+
 function init() {
   setupTabs();
   setupInputPanelToggle();
@@ -745,6 +1158,7 @@ function init() {
   setupBoardControls();
   setupChartPointerNav();
   setupKeyboardNav();
+  setupLiveControls();
   $("submit-button").addEventListener("click", submitAnalysis);
 }
 

@@ -26,6 +26,8 @@
           <button class="tab-button active" data-tab="paste" role="tab" aria-selected="true">Paste PGN</button>
           <button class="tab-button" data-tab="upload" role="tab" aria-selected="false">Upload PGN</button>
           <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess game</button>
+          <button class="tab-button" data-tab="samples" role="tab" aria-selected="false">Sample games</button>
+          <button class="tab-button" data-tab="live" role="tab" aria-selected="false">Live</button>
         </div>
 
         <div class="tab-panel active" data-panel="paste">
@@ -41,6 +43,26 @@
         <div class="tab-panel" data-panel="lichess">
           <label for="lichess-id">Lichess game ID or URL</label>
           <input type="text" id="lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
+        </div>
+
+        <div class="tab-panel" data-panel="samples">
+          <p class="samples-caption">
+            Click a sample to load and analyze it immediately. Games are drawn from the
+            thesis's held-out test partition or synthetic corpus where noted.
+          </p>
+          <div id="samples-status" class="samples-status">Loading samples...</div>
+          <div id="samples-grid" class="samples-grid"></div>
+        </div>
+
+        <div class="tab-panel" data-panel="live">
+          <label for="live-lichess-id">Lichess game ID or URL (ongoing game)</label>
+          <input type="text" id="live-lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
+          <div class="live-button-row">
+            <button id="live-follow-button" type="button" class="primary-button">Watch game</button>
+            <button id="live-tv-button" type="button" class="secondary-button">Watch Lichess TV</button>
+            <button id="live-stop-button" type="button" class="secondary-button" hidden>Stop</button>
+          </div>
+          <p id="live-status-line" class="live-status-line" hidden></p>
         </div>
 
         <fieldset class="baseline-inputs">
@@ -72,7 +94,19 @@
       <div class="results-header">
         <h2 class="results-title" id="results-title">-</h2>
         <span id="provisional-badge" class="provisional-badge" hidden>Provisional (game ongoing)</span>
+        <span id="live-badge" class="live-badge" hidden>Live (move-by-move) estimate</span>
       </div>
+
+      <div id="live-status-panel" class="live-status-panel" hidden>
+        <p id="live-status-text" class="live-status-text"></p>
+        <div class="live-status-actions">
+          <button id="jump-to-live" type="button" class="secondary-button" hidden>Jump to live</button>
+          <button id="show-full-analysis" type="button" class="secondary-button" hidden>Show full-game analysis</button>
+          <button id="stop-live" type="button" class="secondary-button" hidden>Stop</button>
+        </div>
+      </div>
+
+      <div id="sample-meta-box" class="sample-meta-box" hidden></div>
 
       <div id="warnings-box" class="warnings-box" hidden></div>
 
@@ -135,6 +169,10 @@
               <span class="critical-marker-legend" aria-hidden="true">&starf;</span> marks a
               critical move (top by attention &times; rating deviation; plies before ply
               <span id="min-ply-caption">10</span> are excluded from ranking).
+            </p>
+            <p id="synthetic-marker-legend" class="move-list-caption" hidden>
+              <span class="synthetic-marker-legend" aria-hidden="true">&#9632;</span> marks a
+              synthetic: engine moves inserted ply (ground truth from the synthetic corpus).
             </p>
             <div id="move-list" class="move-list" role="list"></div>
           </div>
