@@ -44,6 +44,12 @@ STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
 # Initial connection plus one reconnect attempt, per the live-mode brief.
 MAX_STREAM_ATTEMPTS = 2
 
+# Lichess's game export lags a spectator's TV feed by a couple of plies, so a
+# newly featured game's seed can be behind the feed. Gaps up to this many
+# plies are bridged by a small legal-move search (see LiveGamePrefix.find_bridge).
+MAX_BRIDGE_PLIES = 3
+MAX_BRIDGE_NODES = 60_000
+
 RunInferenceFn = Callable[[str, float | None, float | None, int, int], dict[str, Any]]
 FetchExportPgnFn = Callable[[str], Awaitable[str]]
 
@@ -120,6 +126,58 @@ class LiveGamePrefix:
         """Piece-placement field of the current position's FEN."""
         return self._board.board_fen()
 
+    def find_bridge(self, target_placement: str, max_plies: int = MAX_BRIDGE_PLIES) -> list[str] | None:
+        """Shortest legal move sequence (UCI, at most ``max_plies`` long) from the
+        current position to a position with ``target_placement`` as its
+        piece placement, or None if there is none within the search budget.
+
+        Used to catch up when the export seed lags the TV feed: the feed says
+        where the game is (its FEN) but not the moves in between.
+        """
+        try:
+            target = chess.BaseBoard(target_placement)
+        except ValueError:
+            return None
+        board = self._board.copy(stack=False)
+        budget = [MAX_BRIDGE_NODES]
+        path: list[str] = []
+
+        def squares_off() -> int:
+            return sum(1 for sq in chess.SQUARES if board.piece_at(sq) != target.piece_at(sq))
+
+        def search(depth: int) -> bool:
+            if depth == 0:
+                return board.board_fen() == target_placement
+            # A move changes at most two squares, or four for castling / en passant.
+            if squares_off() > 2 * depth + 2:
+                return False
+            for move in list(board.legal_moves):
+                budget[0] -= 1
+                if budget[0] < 0:
+                    return False
+                board.push(move)
+                path.append(move.uci())
+                if search(depth - 1):
+                    return True
+                board.pop()
+                path.pop()
+            return False
+
+        for depth in range(max_plies + 1):
+            if search(depth):
+                return path
+            if budget[0] < 0:
+                break
+        return None
+
+    def apply_moves(self, ucis: list[str], clock_for_ply: Callable[[int], int]) -> bool:
+        """Append several live moves; ``clock_for_ply`` gives each new ply's clock.
+        Returns False if the ply cap stopped it before the last move."""
+        for uci in ucis:
+            if not self.add_move(uci, clock_for_ply(self.ply_count + 1)):
+                return False
+        return True
+
     def seed_from_pgn(self, pgn_text: str) -> None:
         """Seed the prefix from the already-played portion of the game (export PGN)."""
         game = chess.pgn.read_game(io.StringIO(pgn_text))
@@ -151,6 +209,10 @@ class LiveGamePrefix:
             self.truncated = True
             return False
         move = chess.Move.from_uci(uci)
+        if move not in self._board.legal_moves:
+            # python-chess's san()/push() do not validate, so an out-of-sync move
+            # would otherwise silently corrupt the tracked game.
+            raise ValueError(f"Move {uci} is not legal in the tracked position")
         san = self._board.san(move)
         self._board.push(move)
         self._sans.append(san)
@@ -377,7 +439,6 @@ async def stream_tv(
     try:
         while attempts < MAX_STREAM_ATTEMPTS:
             attempts += 1
-            seen_ply_events = 0
             try:
                 async for msg in iter_ndjson_lines(client, TV_FEED_URL):
                     msg_type = msg.get("t")
@@ -415,7 +476,12 @@ async def stream_tv(
                             # Otherwise the export just isn't available yet (fine: we'll
                             # catch up move by move from the live feed); a variant that
                             # slipped past the headers is caught by the add_move guard below.
-                        seen_ply_events = prefix.ply_count
+                        featured_placement = (data.get("fen") or "").split(" ")[0]
+                        if featured_placement and prefix.board_placement() != featured_placement:
+                            seconds = {p.get("color"): p.get("seconds") or 0 for p in data.get("players", [])}
+                            bridge = prefix.find_bridge(featured_placement)
+                            if bridge:
+                                prefix.apply_moves(bridge, lambda ply: seconds.get("white" if ply % 2 == 1 else "black", 0))
                         yield sse_event(
                             {
                                 "type": "status",
@@ -434,44 +500,31 @@ async def stream_tv(
                             continue
                         feed_placement = (data.get("fen") or "").split(" ")[0]
                         if feed_placement and prefix.board_placement() == feed_placement:
-                            continue  # the export seed already included this move
-                        seen_ply_events += 1
-                        if seen_ply_events <= prefix.ply_count:
-                            continue
-                        clock = clock_seconds_for_ply(seen_ply_events, data.get("wc", 0), data.get("bc", 0))
+                            continue  # the seed already included this move
+                        wc, bc = data.get("wc", 0), data.get("bc", 0)
                         try:
-                            added = prefix.add_move(data["lm"], clock)
-                            in_sync = not (added and feed_placement) or prefix.board_placement() == feed_placement
-                        except Exception:
-                            added, in_sync = False, False
-                        if not in_sync:
-                            # The export PGN used to seed this game can lag the TV feed by a
-                            # move or two, so the live move does not fit our board. Re-seed
-                            # from a fresh export once and accept it if it reaches the feed's
-                            # position; otherwise (an unsupported variant, or the feed skipped
-                            # ahead) drop this game and wait for the next TV switch.
-                            resynced = None
+                            moves = [data["lm"]]
                             if feed_placement:
-                                try:
-                                    fresh = LiveGamePrefix(prefix.headers, max_plies=max_plies)
-                                    fresh.seed_from_pgn(await fetch_export_pgn_fn(current_game_id))
-                                    if fresh.board_placement() == feed_placement:
-                                        resynced = fresh
-                                except Exception:
-                                    resynced = None
-                            if resynced is None:
-                                prefix = None
-                                yield sse_event(
-                                    {
-                                        "type": "status",
-                                        "state": "connecting",
-                                        "message": f"Lost sync with game {current_game_id}; waiting for TV to switch...",
-                                    }
-                                )
-                                continue
-                            prefix = resynced
-                            seen_ply_events = prefix.ply_count
-                            added = True
+                                # Normally just the live move; after a lagging seed, the
+                                # missed plies too (they get this event's clocks).
+                                moves = prefix.find_bridge(feed_placement)
+                                if not moves or moves[-1] != data["lm"]:
+                                    raise ValueError("live move does not fit the tracked position")
+                            added = prefix.apply_moves(moves, lambda ply: clock_seconds_for_ply(ply, wc, bc))
+                        except Exception:
+                            # The live move didn't match our tracked board (an unsupported
+                            # variant, or the feed skipped further ahead than a bridge can
+                            # cover); drop this game and wait for the next TV switch rather
+                            # than crashing the stream.
+                            prefix = None
+                            yield sse_event(
+                                {
+                                    "type": "status",
+                                    "state": "connecting",
+                                    "message": f"Lost sync with game {current_game_id}; waiting for TV to switch...",
+                                }
+                            )
+                            continue
                         if added:
                             event = build_update_event(
                                 prefix, run_inference_fn, top_k, min_ply, None, None, current_game_id

@@ -563,17 +563,39 @@ def test_stream_tv_ignores_repeated_featured_event_for_same_game():
     assert len([p for p in payloads if p["type"] == "update"]) == 2
 
 
-def test_stream_tv_resyncs_from_export_when_seed_lags_the_feed():
-    lagging_pgn = FIXTURE_PGN  # 4 plies
-    caught_up_pgn = FIXTURE_PGN.replace(" *", " 3. Bc4 {[%clk 0:04:55]} *")  # 5 plies
+def test_prefix_add_move_rejects_illegal_move():
+    prefix = LiveGamePrefix({"Result": "*"}, max_plies=100)
+    with pytest.raises(ValueError, match="not legal"):
+        prefix.add_move("e2e5", 300)
+    assert prefix.ply_count == 0
+
+
+def test_prefix_find_bridge_finds_missing_plies():
+    prefix = LiveGamePrefix({}, max_plies=100)
+    prefix.seed_from_pgn(FIXTURE_PGN)
+    target = chess.Board(_fen_after(*FIXTURE_UCIS, "f1c4", "g8f6")).board_fen()
+    assert prefix.find_bridge(target) == ["f1c4", "g8f6"]
+    assert prefix.ply_count == 4  # searching does not change the prefix
+    assert prefix.find_bridge(chess.Board(_fen_after("d2d4")).board_fen()) is None
+    assert prefix.find_bridge("not-a-fen") is None
+
+
+def test_stream_tv_bridges_plies_missing_from_a_lagging_export():
+    # Lichess's export lags the TV feed: when TV features the game, the export
+    # has 4 plies but the game is at ply 5, and the next feed move is ply 6.
     tv_feed = [
-        {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
-        # Ply 5 was already played when TV featured the game, but the export only had 4 plies,
-        # so the first live move (ply 6) does not fit the seeded board.
-        {"t": "fen", "d": {"fen": _fen_after(*FIXTURE_UCIS, "f1c4", "g8f6"), "lm": "g8f6", "wc": 295, "bc": 290}},
+        {
+            "t": "featured",
+            "d": {
+                "id": "wxyz9876",
+                "players": [{"color": "white", "seconds": 290}, {"color": "black", "seconds": 295}],
+                "fen": _fen_after(*FIXTURE_UCIS, "f1c4"),
+            },
+        },
+        {"t": "fen", "d": {"fen": _fen_after(*FIXTURE_UCIS, "f1c4", "g8f6"), "lm": "g8f6", "wc": 290, "bc": 292}},
     ]
-    exports = [lagging_pgn, caught_up_pgn.replace(" *", " Nf6 {[%clk 0:04:50]} *")]
     call_count = {"n": 0}
+    scored_pgns = []
 
     def handler(request):
         call_count["n"] += 1
@@ -582,12 +604,21 @@ def test_stream_tv_resyncs_from_export_when_seed_lags_the_feed():
         return httpx.Response(404)
 
     async def fake_fetch_export(game_id):
-        return exports.pop(0) if len(exports) > 1 else exports[0]
+        return FIXTURE_PGN
+
+    def recording_run_inference(pgn_text, *args):
+        scored_pgns.append(pgn_text)
+        return _fake_run_inference(pgn_text, *args)
 
     async def body_coro():
         async with _mock_client(handler) as client:
-            return [chunk async for chunk in stream_tv(fake_fetch_export, _fake_run_inference, 5, 10, 100, client=client)]
+            return [
+                chunk
+                async for chunk in stream_tv(fake_fetch_export, recording_run_inference, 5, 10, 100, client=client)
+            ]
 
     payloads = [json.loads(e[len("data: ") :].strip()) for e in run(body_coro())]
     assert not any("Lost sync" in (p.get("message") or "") for p in payloads)
     assert len([p for p in payloads if p["type"] == "update"]) == 2
+    assert "3. Bc4 {[%clk 0:04:50]}" in scored_pgns[0]
+    assert "Nf6 {[%clk 0:04:52]}" in scored_pgns[1]
