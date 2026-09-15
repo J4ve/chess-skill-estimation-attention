@@ -184,6 +184,52 @@ excluding plies before a minimum ply (default 10, configurable per request;
 see "API reference") since the model has little context in the opening and
 early plies would otherwise dominate the list.
 
+### Suspicion labels
+
+Next to each suspicion bar, a label chip classifies that side's S_att against
+percentile cutoffs computed from ordinary, finished, rated games in the
+thesis's held-out TEST-partition corpus (games the model never trained on):
+**Typical** (below the 75th percentile of those games), **Unusual** (75th to
+95th percentile), or **Highly unusual: worth a human review** (above the
+95th percentile). Small ticks on the bar track mark the p75 and p95 cutoff
+positions so the bar reads visually, and a caption under the bars states the
+comparison is against ordinary games, "not evidence of engine use on its
+own." Cutoffs use the game's own time-control bucket (bullet/blitz/rapid/
+classical/ultrabullet, derived from the PGN `TimeControl` header) when that
+bucket has at least ~300 sides scored; otherwise they fall back to the
+overall cutoff across all time controls. This is the same wording, cutoffs
+file shape, and boundary logic pytest covers in `tests/test_suspicion_labels.py`
+and `tests/test_format_data.py`.
+
+The cutoffs live in `src/static/suspicion_cutoffs.json`, computed on the HPC
+corpus checkout by scoring a stratified sample of held-out test games with
+this exact model + `AnomalyDetector` code path (same checkpoint, same
+baseline resolution) so the numbers are directly comparable to what a viewer
+sees here. As of this writing the file is **provisional**: the full
+~2,718-game stratified sample run was stopped early, so it currently reflects
+1,200 scored games (bullet and blitz fully covered; rapid partial; classical
+and ultrabullet not yet scored, both currently falling back to the overall
+cutoff). The app shows a banner under the suspicion bars whenever the served
+cutoffs are provisional, naming how many games back them; the banner
+disappears once the file is regenerated from the completed run. Method,
+the full percentile/CI table, and a sanity check running the 12 bundled
+sample games through this same pipeline are recorded outside this repo in
+the cutoffs report generated alongside this file.
+
+Labels never claim cheating and never say "likely" or name a player as
+suspicious: S_att separated engine-substituted synthetic games only weakly in
+thesis evaluation (ROC-AUC 0.555, see "Suspicion score" above), and a clean
+synthetic sample game (`synthetic: false alarm`, see "Sample games" below)
+lands solidly in "Highly unusual" despite having no engine-substituted moves
+at all. A label describes how uncommon a score is among ordinary games, not
+a verdict about the players.
+
+The API optionally returns `white_suspicion_label`/`black_suspicion_label`
+and the cutoffs actually applied (see "API reference"), so the labelling
+logic is testable independent of the UI. `suspicion_labels.py` takes a score
+and a cutoffs object with no reference to S_att specifically, so a future
+trained detector can reuse it with its own cutoffs file in the same shape.
+
 ### Sample games
 
 The "Sample games" tab loads and analyzes a game in one click, reusing the
