@@ -304,7 +304,9 @@ provenance field (`source`, `selection_label`, test errors, actual ratings,
 The "Live" tab follows an ongoing Lichess game move by move: paste a game ID
 or URL and click "Watch game", or click "Watch Lichess TV" to follow
 whichever game Lichess is currently featuring (switching automatically when
-TV switches games). Both use Server-Sent Events against this app's own
+TV switches games; Lichess's game export trails the TV feed by a couple of
+plies, so the missing plies are filled in by a short legal-move search to
+the feed's position). Both use Server-Sent Events against this app's own
 `GET /live/stream/{game_id}` and `GET /live/tv` endpoints, which in turn
 follow Lichess's public streaming API (`GET /api/stream/game/{id}`,
 `GET /api/tv/feed`) with no token required. Each update carries
