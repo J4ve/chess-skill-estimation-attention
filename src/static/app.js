@@ -57,6 +57,10 @@ const METRIC_INFO = {
     term: "Typical / Unusual / Highly unusual label",
     text: "Compares this side's suspicion score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile of those games, Unusual is the 75th-95th percentile, and Highly unusual is above the 95th percentile. It describes how uncommon the score is among ordinary games, not whether anyone cheated; a clean synthetic game in thesis evaluation scored well into the highly-unusual range.",
   },
+  clockTime: {
+    term: "Clock remaining and time spent",
+    text: "Each player's remaining time, parsed from the game's own clock annotations, is one of the model's direct inputs: time pressure changes how people play, so the model reads it move by move. Time spent per move is derived from it, not a separate input.",
+  },
   provisional: {
     term: "Provisional badge",
     text: "Shown when the source game has no final result yet (PGN Result header is \"*\"). The analysis covers only the moves played so far and can change as the game continues.",
@@ -1078,6 +1082,47 @@ function highlightMoveSquares(uci) {
   if (toEl) toEl.classList.add("highlight-to");
 }
 
+// Mirrors format_data.parse_time_control: "{base}+{increment}" in seconds,
+// e.g. "180+0". Used only for the ply-0 (no moves yet) clock display, since
+// every played ply's clock comes straight from that ply's per_move record.
+function parseTimeControlHeader(header) {
+  if (!header) return { base: null, inc: null };
+  const parts = header.split("+");
+  if (parts.length !== 2 || !/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) {
+    return { base: null, inc: null };
+  }
+  return { base: parseInt(parts[0], 10), inc: parseInt(parts[1], 10) };
+}
+
+function formatClock(seconds) {
+  if (typeof seconds !== "number" || Number.isNaN(seconds)) return "-";
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+// Plies are 1-indexed and alternate White (odd), Black (even). Returns the
+// side's remaining clock as of `ply` moves played, or the TimeControl base
+// allotment before either side has moved, or null if neither is derivable.
+function clockSecondsForSide(result, ply, side) {
+  const perMove = result.per_move || [];
+  const wantWhite = side === "white";
+  let targetPly = ply;
+  if (ply === 0 || wantWhite !== (ply % 2 === 1)) {
+    targetPly = ply === 0 ? 0 : ply - 1;
+  }
+  if (targetPly === 0) {
+    return parseTimeControlHeader((result.headers || {}).TimeControl).base;
+  }
+  const record = perMove[targetPly - 1];
+  return record ? record.clock_seconds : null;
+}
+
 function renderPlayerBars(ply) {
   const result = state.result;
   const headers = result.headers || {};
@@ -1085,6 +1130,7 @@ function renderPlayerBars(ply) {
   const blackName = headers.Black || "Black";
   const whiteCurrent = ply === 0 ? result.white_baseline : result.per_move[ply - 1].white_rating;
   const blackCurrent = ply === 0 ? result.black_baseline : result.per_move[ply - 1].black_rating;
+  const synthesizedClock = Boolean(state.sampleMeta && state.sampleMeta.source === "synthetic corpus");
 
   const perSide = {
     white: {
@@ -1092,12 +1138,16 @@ function renderPlayerBars(ply) {
       baseline: result.white_baseline,
       current: whiteCurrent,
       actual: result.white_actual_rating,
+      clockSeconds: clockSecondsForSide(result, ply, "white"),
+      synthesizedClock,
     },
     black: {
       name: blackName,
       baseline: result.black_baseline,
       current: blackCurrent,
       actual: result.black_actual_rating,
+      clockSeconds: clockSecondsForSide(result, ply, "black"),
+      synthesizedClock,
     },
   };
 
@@ -1110,6 +1160,13 @@ function renderPlayerBars(ply) {
 }
 
 function setPlayerBar(position, info) {
+  const clockKnown = typeof info.clockSeconds === "number";
+  $(`bar-${position}-clock`).hidden = !clockKnown;
+  if (clockKnown) {
+    $(`bar-${position}-clock`).textContent = formatClock(info.clockSeconds);
+  }
+  $(`bar-${position}-clock-note`).hidden = !(clockKnown && info.synthesizedClock);
+
   $(`bar-${position}-name`).textContent = info.name;
   $(`bar-${position}-baseline`).textContent = maskedOrRounded(info.baseline);
   $(`bar-${position}-current`).textContent = Math.round(info.current);
@@ -1178,9 +1235,15 @@ function renderMetricsPanel(ply) {
   const whiteDeviationText = visible ? move.white_deviation.toFixed(1) : "hidden";
   const blackDeviationText = visible ? move.black_deviation.toFixed(1) : "hidden";
 
+  const clockText = typeof move.clock_seconds === "number" ? formatClock(move.clock_seconds) : "not available";
+  const timeSpentText =
+    typeof move.time_spent_seconds === "number" ? formatTimeSpent(move.time_spent_seconds) : "not available";
+
   container.innerHTML = `
     <p class="metrics-move-label">Ply ${ply} &middot; ${sideToMove} played ${escapeHtml(move.move || "?")}</p>
     <dl class="metrics-grid">
+      <dt>${sideToMove} clock remaining ${infoIconHtml("clockTime")}</dt><dd>${clockText}</dd>
+      <dt>Time spent on this move</dt><dd>${timeSpentText}</dd>
       <dt>White estimate ${infoIconHtml("ratingEstimate")}</dt><dd>${Math.round(move.white_rating)}${formatDelta(whiteDelta)}</dd>
       <dt>Black estimate</dt><dd>${Math.round(move.black_rating)}${formatDelta(blackDelta)}</dd>
       <dt>White actual / error ${infoIconHtml("actualRating")}</dt><dd>${actualAndErrorText(move.white_rating, result.white_actual_rating)}</dd>
@@ -1216,9 +1279,24 @@ function buildMoveCell(move, side) {
     btn.classList.add("synthetic");
     btn.title = btn.title ? `${btn.title}; synthetic: engine move inserted` : "Synthetic: engine move inserted";
   }
-  btn.textContent = move.move || "?";
+  const moveText = document.createElement("span");
+  moveText.textContent = move.move || "?";
+  btn.appendChild(moveText);
+
+  if (typeof move.time_spent_seconds === "number") {
+    const timeEl = document.createElement("span");
+    timeEl.className = "move-cell-time";
+    timeEl.textContent = formatTimeSpent(move.time_spent_seconds);
+    btn.appendChild(timeEl);
+  }
+
   btn.addEventListener("click", () => renderBoardAtPly(move.ply));
   return btn;
+}
+
+function formatTimeSpent(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return s < 60 ? `${s}s` : formatClock(s);
 }
 
 function renderMoveList(perMove) {

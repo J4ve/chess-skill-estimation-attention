@@ -177,6 +177,9 @@
         <div class="board-column">
           <div class="player-bar" id="player-bar-top">
             <span class="player-bar-name" id="bar-top-name">-</span>
+            <span class="player-bar-clock" id="bar-top-clock" hidden>-</span>
+            <span class="player-bar-clock-note" id="bar-top-clock-note" hidden>synthesized clock</span>
+            <button type="button" class="info-icon" data-info-key="clockTime" aria-label="What is the remaining clock?">i</button>
             <span class="player-bar-stat">baseline <button type="button" class="info-icon" data-info-key="baseline" aria-label="What is the baseline rating?">i</button> <span id="bar-top-baseline">-</span></span>
             <span class="player-bar-stat player-bar-actual" id="bar-top-actual-wrap" hidden>actual <button type="button" class="info-icon" data-info-key="actualRating" aria-label="What is the actual rating?">i</button> <span id="bar-top-actual">-</span></span>
             <span class="player-bar-stat player-bar-current">now <button type="button" class="info-icon" data-info-key="ratingEstimate" aria-label="What is the rating estimate?">i</button> <span id="bar-top-current">-</span></span>
@@ -185,6 +188,8 @@
           <div id="board" class="chessboard"></div>
           <div class="player-bar" id="player-bar-bottom">
             <span class="player-bar-name" id="bar-bottom-name">-</span>
+            <span class="player-bar-clock" id="bar-bottom-clock" hidden>-</span>
+            <span class="player-bar-clock-note" id="bar-bottom-clock-note" hidden>synthesized clock</span>
             <span class="player-bar-stat">baseline <span id="bar-bottom-baseline">-</span></span>
             <span class="player-bar-stat player-bar-actual" id="bar-bottom-actual-wrap" hidden>actual <span id="bar-bottom-actual">-</span></span>
             <span class="player-bar-stat player-bar-current">now <span id="bar-bottom-current">-</span></span>

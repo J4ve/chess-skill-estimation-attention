@@ -605,6 +605,31 @@ textarea {
   font-weight: 600;
 }
 
+.player-bar-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  background: #2a2e2b;
+  color: #f2efe8;
+  letter-spacing: 0.02em;
+}
+
+.player-bar-clock[hidden] {
+  display: none;
+}
+
+.player-bar-clock-note {
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.player-bar-clock-note[hidden] {
+  display: none;
+}
+
 .chessboard {
   width: 100%;
   max-width: 24rem;
@@ -762,6 +787,18 @@ textarea {
 
 .move-cell.empty {
   cursor: default;
+}
+
+.move-cell-time {
+  margin-left: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.move-cell.active .move-cell-time {
+  color: #fff;
+  opacity: 0.85;
 }
 
 .chart-section {
