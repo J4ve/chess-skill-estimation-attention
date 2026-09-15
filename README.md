@@ -111,8 +111,36 @@ for controls.
 
 **Board and player bars.** The bottom player bar always matches the board's
 current orientation; the "Flip" button swaps orientation and the bars follow.
-Each bar shows the player's baseline rating and the model's rating estimate
-at the ply currently shown.
+Each bar shows the player's baseline rating, the model's rating estimate at
+the ply currently shown, and, when the source game recorded one, the
+player's actual rating and the signed error between the estimate and that
+actual rating (for example "estimate 1935, actual 1979, off by -44"). The
+actual rating comes only from the PGN `WhiteElo`/`BlackElo` header and is
+independent of any baseline override: overriding the baseline changes only
+the suspicion-score comparison, never the actual-rating display. The results
+header likewise shows each side's final error, and the metrics panel and
+sample cards below show the same actual/error pair for the currently shown
+ply and for the whole sample.
+
+**Reveal/hide toggle.** The "Hide actual ratings" switch next to the results
+header masks every actual-rating value and error across the bars, metrics
+panel, chart, and sample card, showing a "Reveal" button in its place; this
+supports a guess-the-rating demo where a reviewer steps through the game
+watching only the live estimate before revealing the answer. Because the
+baseline equals the actual rating in most games, hiding also masks baseline
+numbers wherever they would give it away (shown as "baseline hidden"); the
+suspicion-score bars and numbers stay visible either way, since they are not
+themselves a rating value. The choice is remembered per browser via
+`localStorage` (defaulting to shown) and does not affect what the API
+returns, only what the page displays.
+
+**What do these numbers mean?** Every label with a small "i" next to it
+(baseline, actual rating, error, deviation, attention, critical move,
+suspicion score, and more) shows a one-or-two-sentence plain-language
+explanation on hover, tap, or keyboard focus. The same explanations are also
+listed together in the collapsible "What do these numbers mean?" section
+near the results header, for a reviewer who wants the full list at once. The
+wording lives in one place, `METRIC_INFO` in `src/static/app.js`.
 
 **Moves panel.** Lists every move in standard two-column notation (move
 number, White, Black). Click a move to jump the board there. The move
@@ -122,7 +150,14 @@ a critical move (see "Move details" below).
 **Rating chart.** Full width, below the board and move list, like Lichess's
 evaluation graph. A vertical line and a dot on each curve track the current
 ply; small ring markers show critical moves. Click or drag on the chart to
-jump the board to that ply.
+jump the board to that ply. Each side's baseline is drawn as a dashed
+reference line; if that side's actual rating is also known and matches the
+baseline (the usual case), the two are drawn as one line labeled "actual
+rating (baseline)" rather than as duplicates, and only when they differ does
+a separate, visually distinct actual-rating line appear. While actual
+ratings are hidden, these reference lines are omitted from the chart
+entirely rather than drawn with masked values, so the rating-estimate curves
+are all that remain visible.
 
 **Controls and keys.**
 
@@ -178,11 +213,18 @@ same analysis board as every other input mode. Cards are grouped by
   and the panel above the board shows the substitution rate, the Maia
   rating band, the substitution engine, and this game's saved suspicion
   score (`S_att`) from thesis evaluation, next to the score this deployment
-  computes live, so the two can be compared directly.
+  computes live, so the two can be compared directly. A neutral note on
+  every synthetic card explains why both sides can score high here: the
+  rating model reads Maia's play as coming from a player well above its
+  nominal band (for example Maia 1100 read as roughly 2280), which is the
+  known reason the computed suspicion score is weak on these samples.
 
 Every card also shows its saved held-out test error (rating games) or saved
 `S_att` (synthetic games) alongside the app's own live estimate, so a viewer
-can see whether this deployment's numbers match the thesis evaluation's.
+can see whether this deployment's numbers match the thesis evaluation's, and
+the actual rating(s) used for evaluation. The "Hide actual ratings" toggle
+(see "Using the analysis board") masks the actual-rating and test-error
+facts on this card the same way it masks the board and chart.
 
 `manifest.json` documents its own schema in a `schema_notes` field; new
 entries only need `id`, `title`, `description`, and `pgn_path`, with every
@@ -197,7 +239,12 @@ whichever game Lichess is currently featuring (switching automatically when
 TV switches games). Both use Server-Sent Events against this app's own
 `GET /live/stream/{game_id}` and `GET /live/tv` endpoints, which in turn
 follow Lichess's public streaming API (`GET /api/stream/game/{id}`,
-`GET /api/tv/feed`) with no token required.
+`GET /api/tv/feed`) with no token required. Each update carries
+`white_actual_rating`/`black_actual_rating` straight from whatever rating
+Lichess's own stream reports for that side (the game's PGN header when
+following a game by ID, or the featured player's live rating when following
+TV), null when the stream did not report one, and displayed and masked by
+the reveal/hide toggle exactly like a batch result.
 
 **Prefix-estimate semantics (read this before trusting the live curve).**
 The model's BiLSTM is not incremental: scoring ply *t* means running the
@@ -281,6 +328,12 @@ All three `predict/*` endpoints return the same shape:
   supplied it), `pgn_header` (parsed from `WhiteElo`/`BlackElo`), or
   `self_prediction_fallback` (no usable baseline anywhere, so the model's own
   final-ply prediction was used instead; see "Limitations").
+- `white_actual_rating`, `black_actual_rating`: the side's real rating,
+  parsed from the PGN `WhiteElo`/`BlackElo` header only (`"?"` and any other
+  non-numeric or missing value is `null`). Independent of the baseline: a
+  `white_baseline`/`black_baseline` request override never changes this
+  field, since it is a fixed ground-truth fact about the game rather than a
+  reviewer-supplied value used for suspicion scoring.
 - `warnings`: readable strings for anything that degrades the result (a
   fallback baseline, or an anomaly branch that is not available).
 - `white_final_rating`, `black_final_rating`: the model's final-ply rating
