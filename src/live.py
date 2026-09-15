@@ -34,7 +34,7 @@ import chess
 import chess.pgn
 import httpx
 
-from format_data import NON_STANDARD_GAME_MESSAGE, game_setup_error, parse_game
+from format_data import NON_STANDARD_GAME_MESSAGE, game_setup_error, parse_game, time_to_seconds
 
 USER_AGENT = "RatingNet-Prototype/0.1 (+https://github.com/J4ve/RatingNet)"
 STREAM_GAME_URL_TEMPLATE = "https://lichess.org/api/stream/game/{game_id}"
@@ -121,6 +121,13 @@ class LiveGamePrefix:
     @property
     def ply_count(self) -> int:
         return len(self._sans)
+
+    def last_clock_seconds(self, white: bool) -> int | None:
+        """The most recent recorded clock for one side, or None before its first move."""
+        for index in range(len(self._clocks) - 1, -1, -1):
+            if (index % 2 == 0) == white:
+                return time_to_seconds(self._clocks[index])
+        return None
 
     def board_placement(self) -> str:
         """Piece-placement field of the current position's FEN."""
@@ -478,10 +485,11 @@ async def stream_tv(
                             # slipped past the headers is caught by the add_move guard below.
                         featured_placement = (data.get("fen") or "").split(" ")[0]
                         if featured_placement and prefix.board_placement() != featured_placement:
-                            seconds = {p.get("color"): p.get("seconds") or 0 for p in data.get("players", [])}
                             bridge = prefix.find_bridge(featured_placement)
                             if bridge:
-                                prefix.apply_moves(bridge, lambda ply: seconds.get("white" if ply % 2 == 1 else "black", 0))
+                                # The featured event carries no per-move clocks, so each
+                                # bridged ply repeats that side's last recorded clock.
+                                prefix.apply_moves(bridge, lambda ply: prefix.last_clock_seconds(ply % 2 == 1) or 0)
                         yield sse_event(
                             {
                                 "type": "status",

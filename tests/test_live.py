@@ -620,5 +620,5 @@ def test_stream_tv_bridges_plies_missing_from_a_lagging_export():
     payloads = [json.loads(e[len("data: ") :].strip()) for e in run(body_coro())]
     assert not any("Lost sync" in (p.get("message") or "") for p in payloads)
     assert len([p for p in payloads if p["type"] == "update"]) == 2
-    assert "3. Bc4 {[%clk 0:04:50]}" in scored_pgns[0]
+    assert "3. Bc4 {[%clk 0:04:58]}" in scored_pgns[0]  # White's last recorded clock
     assert "Nf6 {[%clk 0:04:52]}" in scored_pgns[1]
