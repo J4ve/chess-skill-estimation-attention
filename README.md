@@ -26,8 +26,10 @@ input.
   instead of a bare 500 for bad input.
 - **Web prototype** (`src/static/`): a no-build-step HTML/CSS/JS page served
   by the same FastAPI app, covering both required input modes (PGN and
-  Lichess ID) with a step-through board, a per-move rating chart, suspicion
-  score bars, and a clickable critical-moves list. See "Web prototype" below.
+  Lichess ID). Results render as a Lichess-style analysis board: a
+  chessboard with player bars, a two-column move list, a per-move metrics
+  panel, and a full-width rating chart synced to the current ply. See "Web
+  prototype" below.
 
 Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_thesis).
 
@@ -95,14 +97,65 @@ streaming of an ongoing game is a later step, not implemented here (see
 "Limitations").
 
 The page has three input tabs (paste PGN, upload a `.pgn` file, or enter a
-Lichess game ID/URL), optional per-side baseline overrides, and shows:
-player names and final rating estimates, a suspicion score bar per side (with
-a caption that it is a review aid, not a verdict), the resolved baseline
-source and any warnings, a per-move rating chart with each side's baseline as
-a dashed reference line, a chessboard you can step through move by move with
-the active move highlighted, and a clickable critical-moves list that jumps
-the board to that ply. A "provisional" badge appears for games with no
-result yet.
+Lichess game ID/URL), optional per-side baseline, critical-move top-k, and
+min-ply overrides. Once a game is analyzed, the input form collapses (click
+its header to reopen it for a new game) and a Lichess-style analysis board
+takes over: a chessboard with a player bar above and below showing each
+side's baseline and current rating estimate, a move list in Lichess's
+two-column style, a per-move metrics panel, and a rating chart across the
+full width with a marker that follows the current ply. See "Using the
+analysis board" below for controls.
+
+### Using the analysis board
+
+**Board and player bars.** The bottom player bar always matches the board's
+current orientation; the "Flip" button swaps orientation and the bars follow.
+Each bar shows the player's baseline rating and the model's rating estimate
+at the ply currently shown.
+
+**Moves panel.** Lists every move in standard two-column notation (move
+number, White, Black). Click a move to jump the board there. The move
+currently shown is highlighted and kept scrolled into view. A red star marks
+a critical move (see "Move details" below).
+
+**Rating chart.** Full width, below the board and move list, like Lichess's
+evaluation graph. A vertical line and a dot on each curve track the current
+ply; small ring markers show critical moves. Click or drag on the chart to
+jump the board to that ply.
+
+**Controls and keys.**
+
+| Control | Key | Effect |
+| --- | --- | --- |
+| `«` | `Home` / `ArrowUp` | Jump to the start of the game |
+| `‹` | `ArrowLeft` | Step back one ply |
+| `›` | `ArrowRight` | Step forward one ply |
+| `»` | `End` / `ArrowDown` | Jump to the end of the game |
+| Play/Pause | - | Autoplay forward at about one move per second; stops at the end or on any manual navigation |
+| Flip | - | Swap board orientation and the player bars |
+
+Keyboard shortcuts are ignored while typing in a text field.
+
+**Move details panel.** For the currently shown ply: the move in SAN, each
+side's rating estimate and its change from the previous ply, each side's
+deviation from its baseline, the move's attention weight with its rank and
+percentile among all plies in the game (for example "top 5% of attention"),
+and whether the move is flagged critical with its rank. At the start of the
+game this shows each side's baseline instead.
+
+**Critical moves.** Ranked per side by `attention_weight * |deviation|`,
+excluding plies before a minimum ply (default 10, configurable per request;
+see "API reference") since the model has little context in the opening and
+early plies would otherwise dominate the list.
+
+### Roadmap (not built)
+
+- Live game streaming from Lichess, so an ongoing game updates move by move
+  instead of requiring a re-submitted PGN. See "Limitations" below for why
+  this is not a small addition (the model has no incremental/streaming mode).
+- Optional Stockfish evaluation plotted alongside the rating curve, to give a
+  reviewer both signals (engine correlation and rating-estimate anomaly) on
+  the same timeline.
 
 ### Vendored libraries
 
@@ -133,9 +186,9 @@ chess.js as a native ES module.
 | `GET /health` | Model load status, device, and checkpoint path. |
 | `GET /` | The web prototype (`src/static/index.html`). |
 | `GET /api` | Machine-readable endpoint list. |
-| `POST /predict/pgn` | Body `{pgn, white_baseline?, black_baseline?}`. Query `top_k` (default 5). |
-| `POST /predict/upload` | Multipart form: `file` (`.pgn`), `white_baseline?`, `black_baseline?`. Query `top_k`. |
-| `POST /predict/lichess` | Body `{game_id, white_baseline?, black_baseline?}`, where `game_id` is a bare 8-character Lichess ID or a full game URL. Query `top_k`. |
+| `POST /predict/pgn` | Body `{pgn, white_baseline?, black_baseline?}`. Query `top_k` (default 5), `min_ply` (default 10). |
+| `POST /predict/upload` | Multipart form: `file` (`.pgn`), `white_baseline?`, `black_baseline?`. Query `top_k`, `min_ply`. |
+| `POST /predict/lichess` | Body `{game_id, white_baseline?, black_baseline?}`, where `game_id` is a bare 8-character Lichess ID or a full game URL. Query `top_k`, `min_ply`. |
 
 All three `predict/*` endpoints return the same shape:
 
@@ -155,8 +208,11 @@ All three `predict/*` endpoints return the same shape:
   `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`).
 - `critical_moves`: up to `top_k` entries per side, ranked by
   `attention_weight * |deviation|` for that side (`ply`, `move`, `side`,
-  `attention_weight`, `deviation`, `weighted_score`). Empty (with a warning)
-  when the served checkpoint has no attention/anomaly branch.
+  `attention_weight`, `deviation`, `weighted_score`), excluding plies before
+  `min_ply`. Empty (with a warning) when the served checkpoint has no
+  attention/anomaly branch.
+- `critical_moves_min_ply`: the `min_ply` value actually used for the
+  `critical_moves` ranking above.
 - `ongoing`, `provisional`: `true` when the game has no final result yet
   (PGN `Result` header is `*`).
 

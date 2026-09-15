@@ -16,62 +16,61 @@
   </header>
 
   <main class="layout">
-    <section class="input-panel" aria-label="Game input">
-      <div class="tabs" role="tablist">
-        <button class="tab-button active" data-tab="paste" role="tab" aria-selected="true">Paste PGN</button>
-        <button class="tab-button" data-tab="upload" role="tab" aria-selected="false">Upload PGN</button>
-        <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess game</button>
-      </div>
-
-      <div class="tab-panel active" data-panel="paste">
-        <label for="pgn-text">PGN text (must include [%clk ...] annotations)</label>
-        <textarea id="pgn-text" rows="8" placeholder="[Event &quot;Example&quot;]&#10;[WhiteElo &quot;1500&quot;]&#10;[BlackElo &quot;1500&quot;]&#10;&#10;1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} ..."></textarea>
-      </div>
-
-      <div class="tab-panel" data-panel="upload">
-        <label for="pgn-file">PGN file (.pgn)</label>
-        <input type="file" id="pgn-file" accept=".pgn,text/plain" />
-      </div>
-
-      <div class="tab-panel" data-panel="lichess">
-        <label for="lichess-id">Lichess game ID or URL</label>
-        <input type="text" id="lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
-      </div>
-
-      <fieldset class="baseline-inputs">
-        <legend>Optional overrides</legend>
-        <div class="field-row">
-          <label for="white-baseline">White baseline rating</label>
-          <input type="number" id="white-baseline" placeholder="from PGN header if left blank" />
+    <section class="input-panel" id="input-panel" aria-label="Game input">
+      <button type="button" class="input-panel-toggle" id="input-panel-toggle" aria-expanded="true" aria-controls="input-panel-body">
+        <span>Game input</span>
+        <span class="toggle-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="input-panel-body" id="input-panel-body">
+        <div class="tabs" role="tablist">
+          <button class="tab-button active" data-tab="paste" role="tab" aria-selected="true">Paste PGN</button>
+          <button class="tab-button" data-tab="upload" role="tab" aria-selected="false">Upload PGN</button>
+          <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess game</button>
         </div>
-        <div class="field-row">
-          <label for="black-baseline">Black baseline rating</label>
-          <input type="number" id="black-baseline" placeholder="from PGN header if left blank" />
-        </div>
-        <div class="field-row">
-          <label for="top-k">Critical moves per side</label>
-          <input type="number" id="top-k" value="5" min="1" max="20" />
-        </div>
-      </fieldset>
 
-      <button id="submit-button" class="primary-button">Analyze game</button>
-      <p id="error-message" class="error-message" hidden></p>
+        <div class="tab-panel active" data-panel="paste">
+          <label for="pgn-text">PGN text (must include [%clk ...] annotations)</label>
+          <textarea id="pgn-text" rows="8" placeholder="[Event &quot;Example&quot;]&#10;[WhiteElo &quot;1500&quot;]&#10;[BlackElo &quot;1500&quot;]&#10;&#10;1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} ..."></textarea>
+        </div>
+
+        <div class="tab-panel" data-panel="upload">
+          <label for="pgn-file">PGN file (.pgn)</label>
+          <input type="file" id="pgn-file" accept=".pgn,text/plain" />
+        </div>
+
+        <div class="tab-panel" data-panel="lichess">
+          <label for="lichess-id">Lichess game ID or URL</label>
+          <input type="text" id="lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
+        </div>
+
+        <fieldset class="baseline-inputs">
+          <legend>Optional overrides</legend>
+          <div class="field-row">
+            <label for="white-baseline">White baseline rating</label>
+            <input type="number" id="white-baseline" placeholder="from PGN header if left blank" />
+          </div>
+          <div class="field-row">
+            <label for="black-baseline">Black baseline rating</label>
+            <input type="number" id="black-baseline" placeholder="from PGN header if left blank" />
+          </div>
+          <div class="field-row">
+            <label for="top-k">Critical moves per side</label>
+            <input type="number" id="top-k" value="5" min="1" max="20" />
+          </div>
+          <div class="field-row">
+            <label for="min-ply">Skip critical-move plies before</label>
+            <input type="number" id="min-ply" value="10" min="0" max="100" />
+          </div>
+        </fieldset>
+
+        <button id="submit-button" class="primary-button">Analyze game</button>
+        <p id="error-message" class="error-message" hidden></p>
+      </div>
     </section>
 
     <section class="results-panel" id="results-panel" hidden aria-label="Analysis results">
       <div class="results-header">
-        <div class="player-cards">
-          <div class="player-card">
-            <span class="player-color">White</span>
-            <span class="player-name" id="white-name">-</span>
-            <span class="player-rating" id="white-rating">-</span>
-          </div>
-          <div class="player-card">
-            <span class="player-color">Black</span>
-            <span class="player-name" id="black-name">-</span>
-            <span class="player-rating" id="black-rating">-</span>
-          </div>
-        </div>
+        <h2 class="results-title" id="results-title">-</h2>
         <span id="provisional-badge" class="provisional-badge" hidden>Provisional (game ongoing)</span>
       </div>
 
@@ -79,7 +78,10 @@
 
       <div class="suspicion-section">
         <p class="suspicion-caption">
-          Suspicion score is a supplementary flag for human review, not proof of cheating.
+          Suspicion score is a supplementary flag for human review, not proof of cheating. It is
+          S_att, the attention-weighted average rating-point gap between the model's per-move
+          estimate and the player's baseline over the whole game. In thesis evaluation, this
+          score separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).
         </p>
         <div class="suspicion-bar-row">
           <span class="suspicion-label">White</span>
@@ -87,37 +89,62 @@
           <span id="white-suspicion-value" class="suspicion-value">-</span>
           <span id="white-baseline-source" class="baseline-source-tag">-</span>
         </div>
+        <p id="white-suspicion-explain" class="suspicion-explain"></p>
         <div class="suspicion-bar-row">
           <span class="suspicion-label">Black</span>
           <div class="suspicion-bar-track"><div id="black-suspicion-bar" class="suspicion-bar-fill"></div></div>
           <span id="black-suspicion-value" class="suspicion-value">-</span>
           <span id="black-baseline-source" class="baseline-source-tag">-</span>
         </div>
+        <p id="black-suspicion-explain" class="suspicion-explain"></p>
+      </div>
+
+      <div class="analysis-board-row">
+        <div class="board-column">
+          <div class="player-bar" id="player-bar-top">
+            <span class="player-bar-name" id="bar-top-name">-</span>
+            <span class="player-bar-stat">baseline <span id="bar-top-baseline">-</span></span>
+            <span class="player-bar-stat player-bar-current">now <span id="bar-top-current">-</span></span>
+          </div>
+          <div id="board" class="chessboard"></div>
+          <div class="player-bar" id="player-bar-bottom">
+            <span class="player-bar-name" id="bar-bottom-name">-</span>
+            <span class="player-bar-stat">baseline <span id="bar-bottom-baseline">-</span></span>
+            <span class="player-bar-stat player-bar-current">now <span id="bar-bottom-current">-</span></span>
+          </div>
+          <div class="board-controls">
+            <button id="flip-board" title="Flip board">Flip</button>
+            <button id="step-start" title="Start of game (Up / Home)">&laquo;</button>
+            <button id="step-back" title="Previous move (Left)">&lsaquo;</button>
+            <button id="play-pause" title="Autoplay" aria-pressed="false">Play</button>
+            <button id="step-forward" title="Next move (Right)">&rsaquo;</button>
+            <button id="step-end" title="End of game (Down / End)">&raquo;</button>
+            <span id="ply-indicator">ply 0 / 0</span>
+          </div>
+        </div>
+
+        <div class="side-column">
+          <div class="metrics-panel">
+            <h2>Move details</h2>
+            <div id="metrics-content" class="metrics-content"></div>
+          </div>
+
+          <div class="move-list-panel">
+            <h2>Moves</h2>
+            <p class="move-list-caption">
+              <span class="critical-marker-legend" aria-hidden="true">&starf;</span> marks a
+              critical move (top by attention &times; rating deviation; plies before ply
+              <span id="min-ply-caption">10</span> are excluded from ranking).
+            </p>
+            <div id="move-list" class="move-list" role="list"></div>
+          </div>
+        </div>
       </div>
 
       <div class="chart-section">
-        <canvas id="rating-chart" height="220"></canvas>
-      </div>
-
-      <div class="board-and-critical">
-        <div class="board-section">
-          <div id="board" class="chessboard"></div>
-          <div class="board-controls">
-            <button id="step-start" title="Go to start">&laquo;</button>
-            <button id="step-back" title="Previous move">&lsaquo;</button>
-            <span id="ply-indicator">ply 0 / 0</span>
-            <button id="step-forward" title="Next move">&rsaquo;</button>
-            <button id="step-end" title="Go to end">&raquo;</button>
-          </div>
-          <p id="current-move-label" class="current-move-label"></p>
-        </div>
-
-        <div class="critical-moves-section">
-          <h2>Critical moves</h2>
-          <p class="critical-moves-caption">
-            Ranked by attention weight &times; rating deviation per side. Click a move to jump the board there.
-          </p>
-          <ol id="critical-moves-list" class="critical-moves-list"></ol>
+        <h2>Rating estimate over the game</h2>
+        <div class="chart-canvas-wrap">
+          <canvas id="rating-chart"></canvas>
         </div>
       </div>
     </section>
