@@ -3,266 +3,255 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>RatingNet Prototype</title>
+  <link rel="icon" href="data:," />
+  <script>
+    // Apply a remembered light/dark choice before first paint (no flash).
+    try {
+      var savedTheme = window.localStorage.getItem("ratingnet.theme");
+      if (savedTheme === "light" || savedTheme === "dark") {
+        document.documentElement.setAttribute("data-theme", savedTheme);
+      }
+    } catch (err) {}
+  </script>
   <link rel="stylesheet" href="/static/vendor/chessboard-js/chessboard-1.0.0.min.css" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <header class="app-header">
-    <h1>RatingNet Prototype</h1>
-    <p class="subtitle">
-      Real-time chess skill estimation and anomaly detection for human fair-play review.
-    </p>
-  </header>
-
-  <main class="layout">
-    <section class="input-panel" id="input-panel" aria-label="Game input">
-      <button type="button" class="input-panel-toggle" id="input-panel-toggle" aria-expanded="true" aria-controls="input-panel-body">
-        <span>Game input</span>
-        <span class="toggle-caret" aria-hidden="true">&#9662;</span>
+  <header class="input-panel" id="input-panel" aria-label="Game input">
+    <div class="input-row">
+      <span class="brand" title="Chess skill estimation and anomaly detection for human fair-play review">RatingNet</span>
+      <button type="button" class="chip-button input-panel-toggle" id="input-panel-toggle" aria-expanded="true" aria-controls="input-panel-body" hidden>
+        <span id="input-panel-toggle-label">Load game</span> <span class="toggle-caret" aria-hidden="true">&#9662;</span>
       </button>
       <div class="input-panel-body" id="input-panel-body">
         <div class="tabs" role="tablist">
-          <button class="tab-button active" data-tab="paste" role="tab" aria-selected="true">Paste PGN</button>
-          <button class="tab-button" data-tab="upload" role="tab" aria-selected="false">Upload PGN</button>
-          <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess game</button>
-          <button class="tab-button" data-tab="samples" role="tab" aria-selected="false">Sample games</button>
+          <button class="tab-button active" data-tab="paste" role="tab" aria-selected="true">Paste</button>
+          <button class="tab-button" data-tab="upload" role="tab" aria-selected="false">Upload</button>
+          <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess</button>
+          <button class="tab-button" data-tab="samples" role="tab" aria-selected="false">Samples</button>
           <button class="tab-button" data-tab="live" role="tab" aria-selected="false">Live</button>
         </div>
 
         <div class="tab-panel active" data-panel="paste">
-          <label for="pgn-text">PGN text (must include [%clk ...] annotations)</label>
-          <textarea id="pgn-text" rows="8" placeholder="[Event &quot;Example&quot;]&#10;[WhiteElo &quot;1500&quot;]&#10;[BlackElo &quot;1500&quot;]&#10;&#10;1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} ..."></textarea>
+          <textarea id="pgn-text" rows="1" aria-label="PGN text with [%clk] clock annotations" placeholder="Paste PGN with [%clk] clocks"></textarea>
         </div>
 
         <div class="tab-panel" data-panel="upload">
-          <label for="pgn-file">PGN file (.pgn)</label>
-          <input type="file" id="pgn-file" accept=".pgn,text/plain" />
+          <input type="file" id="pgn-file" accept=".pgn,text/plain" aria-label="PGN file" />
         </div>
 
         <div class="tab-panel" data-panel="lichess">
-          <label for="lichess-id">Lichess game ID or URL</label>
-          <input type="text" id="lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
-        </div>
-
-        <div class="tab-panel" data-panel="samples">
-          <p class="samples-caption">
-            Click a sample to load and analyze it immediately. Games are drawn from the
-            thesis's held-out test partition or synthetic corpus where noted.
-          </p>
-          <div id="samples-status" class="samples-status">Loading samples...</div>
-          <div id="samples-grid" class="samples-grid"></div>
+          <input type="text" id="lichess-id" aria-label="Lichess game ID or URL" placeholder="Lichess game ID or URL" />
         </div>
 
         <div class="tab-panel" data-panel="live">
-          <label for="live-lichess-id">Lichess game ID or URL (ongoing game)</label>
-          <input type="text" id="live-lichess-id" placeholder="e.g. abcd1234 or https://lichess.org/abcd1234" />
-          <div class="live-button-row">
-            <button id="live-follow-button" type="button" class="primary-button">Watch game</button>
-            <button id="live-tv-button" type="button" class="secondary-button">Watch Lichess TV</button>
-            <button id="live-stop-button" type="button" class="secondary-button" hidden>Stop</button>
-          </div>
-          <p id="live-status-line" class="live-status-line" hidden></p>
+          <input type="text" id="live-lichess-id" aria-label="Ongoing Lichess game ID or URL" placeholder="Ongoing Lichess game ID or URL" />
+          <button id="live-follow-button" type="button" class="primary-button">Watch</button>
+          <button id="live-tv-button" type="button" class="secondary-button">Lichess TV</button>
+          <button id="live-stop-button" type="button" class="secondary-button" hidden>Stop</button>
+          <span id="live-status-line" class="live-status-line" hidden></span>
         </div>
 
-        <fieldset class="baseline-inputs">
-          <legend>Optional overrides</legend>
-          <div class="field-row">
-            <label for="white-baseline">White baseline rating</label>
-            <input type="number" id="white-baseline" placeholder="from PGN header if left blank" />
+        <div class="tab-panel samples-panel" data-panel="samples">
+          <div class="samples-head">
+            <span class="samples-hint">Click to analyze</span>
+            <button type="button" class="info-icon" data-info-key="samples" aria-label="Where do samples come from?">i</button>
+            <span id="samples-status" class="samples-status">Loading samples...</span>
           </div>
-          <div class="field-row">
-            <label for="black-baseline">Black baseline rating</label>
-            <input type="number" id="black-baseline" placeholder="from PGN header if left blank" />
-          </div>
-          <div class="field-row">
-            <label for="top-k">Critical moves per side</label>
-            <input type="number" id="top-k" value="5" min="1" max="20" />
-          </div>
-          <div class="field-row">
-            <label for="min-ply">Skip critical-move plies before</label>
-            <input type="number" id="min-ply" value="10" min="0" max="100" />
-          </div>
-        </fieldset>
+          <div id="samples-grid" class="samples-grid"></div>
+        </div>
 
-        <button id="submit-button" class="primary-button">Analyze game</button>
-        <p id="error-message" class="error-message" hidden></p>
+        <details class="options-menu">
+          <summary class="secondary-button">Options</summary>
+          <fieldset class="baseline-inputs">
+            <legend>Overrides</legend>
+            <label for="white-baseline">White baseline</label>
+            <input type="number" id="white-baseline" placeholder="PGN header" />
+            <label for="black-baseline">Black baseline</label>
+            <input type="number" id="black-baseline" placeholder="PGN header" />
+            <label for="top-k">Critical moves / side</label>
+            <input type="number" id="top-k" value="5" min="1" max="20" />
+            <label for="min-ply">Skip plies before</label>
+            <input type="number" id="min-ply" value="10" min="0" max="100" />
+          </fieldset>
+        </details>
+
+        <button id="submit-button" class="primary-button">Analyze</button>
+      </div>
+      <span class="input-row-spacer"></span>
+      <button type="button" id="theme-toggle" class="icon-button" aria-label="Switch to dark mode" title="Light / dark">
+        <span class="theme-icon-dark" aria-hidden="true">&#9790;</span><span class="theme-icon-light" aria-hidden="true">&#9728;</span>
+      </button>
+    </div>
+    <p id="error-message" class="error-message" role="alert" hidden></p>
+  </header>
+
+  <main class="results-panel" id="results-panel" hidden aria-label="Analysis results">
+    <section class="board-column" aria-label="Board">
+      <div class="player-bar" id="player-bar-top">
+        <span class="side-swatch" id="bar-top-swatch" aria-hidden="true"></span>
+        <span class="player-bar-name" id="bar-top-name">-</span>
+        <span class="player-stat">
+          <span class="player-stat-value" id="bar-top-current">-</span>
+          <span class="player-stat-label">est <button type="button" class="info-icon" data-info-key="ratingEstimate" aria-label="What is the rating estimate?">i</button></span>
+        </span>
+        <span class="player-stat" id="bar-top-actual-wrap" hidden>
+          <span class="player-stat-value" id="bar-top-actual">-</span>
+          <span class="player-stat-label">actual <button type="button" class="info-icon" data-info-key="actualRating" aria-label="What is the actual rating?">i</button></span>
+        </span>
+        <span class="error-chip" id="bar-top-error-wrap" hidden title="Estimate minus actual rating"><span id="bar-top-error">-</span></span>
+        <span class="player-bar-spacer"></span>
+        <span class="player-bar-clock-note" id="bar-top-clock-note" hidden>synthetic clock</span>
+        <button type="button" class="info-icon clock-info" data-info-key="clockTime" aria-label="What is the clock?">i</button>
+        <span class="clock" id="bar-top-clock" hidden>-</span>
+      </div>
+
+      <div class="board-wrap" id="board-wrap">
+        <div id="board" class="chessboard"></div>
+        <div class="board-overlay" id="board-overlay" hidden>
+          <div class="board-overlay-badge">
+            <span class="spinner" id="board-overlay-spinner" aria-hidden="true"></span>
+            <span id="board-overlay-text">Reconnecting...</span>
+            <button type="button" id="board-overlay-retry" class="primary-button" hidden>Retry</button>
+          </div>
+        </div>
+        <span class="board-badge" id="board-badge" hidden>Game over</span>
+      </div>
+
+      <div class="player-bar" id="player-bar-bottom">
+        <span class="side-swatch" id="bar-bottom-swatch" aria-hidden="true"></span>
+        <span class="player-bar-name" id="bar-bottom-name">-</span>
+        <span class="player-stat">
+          <span class="player-stat-value" id="bar-bottom-current">-</span>
+          <span class="player-stat-label">est</span>
+        </span>
+        <span class="player-stat" id="bar-bottom-actual-wrap" hidden>
+          <span class="player-stat-value" id="bar-bottom-actual">-</span>
+          <span class="player-stat-label">actual</span>
+        </span>
+        <span class="error-chip" id="bar-bottom-error-wrap" hidden title="Estimate minus actual rating"><span id="bar-bottom-error">-</span></span>
+        <span class="player-bar-spacer"></span>
+        <span class="player-bar-clock-note" id="bar-bottom-clock-note" hidden>synthetic clock</span>
+        <span class="clock" id="bar-bottom-clock" hidden>-</span>
+      </div>
+
+      <div class="board-controls">
+        <button id="flip-board" title="Flip board" aria-label="Flip board">&#8645;</button>
+        <button id="step-start" title="Start (Up / Home)" aria-label="Start of game">&#171;</button>
+        <button id="step-back" title="Previous (Left)" aria-label="Previous move">&#8249;</button>
+        <button id="play-pause" class="play-button" title="Autoplay" aria-pressed="false">Play</button>
+        <button id="step-forward" title="Next (Right)" aria-label="Next move">&#8250;</button>
+        <button id="step-end" title="End (Down / End)" aria-label="End of game">&#187;</button>
+        <span id="ply-indicator" class="ply-indicator">0 / 0</span>
       </div>
     </section>
 
-    <section class="results-panel" id="results-panel" hidden aria-label="Analysis results">
-      <div class="results-header">
-        <h2 class="results-title" id="results-title">-</h2>
-        <span id="provisional-badge" class="provisional-badge" hidden
-          >Provisional (game ongoing) <button type="button" class="info-icon" data-info-key="provisional" aria-label="What does this badge mean?">i</button></span
-        >
-        <span id="live-badge" class="live-badge" hidden
-          >Live (move-by-move) estimate <button type="button" class="info-icon" data-info-key="liveVsFull" aria-label="What does this badge mean?">i</button></span
-        >
-      </div>
-
-      <div class="actual-rating-toggle-row">
-        <label class="reveal-switch-label" for="hide-actual-toggle">
-          <input type="checkbox" id="hide-actual-toggle" />
-          Hide actual ratings
+    <aside class="side-column" aria-label="Analysis">
+      <div class="card side-header">
+        <h1 class="results-title" id="results-title">-</h1>
+        <span id="provisional-badge" class="chip chip-warn" hidden>Ongoing <button type="button" class="info-icon" data-info-key="provisional" aria-label="What does this badge mean?">i</button></span>
+        <span id="live-badge" class="chip chip-live" hidden>Live <button type="button" class="info-icon" data-info-key="liveVsFull" aria-label="What does this badge mean?">i</button></span>
+        <span class="card-head-spacer"></span>
+        <label class="switch" for="hide-actual-toggle">
+          <input type="checkbox" id="hide-actual-toggle" role="switch" />
+          <span class="switch-track" aria-hidden="true"></span>
+          <span>Hide ratings</span>
         </label>
-        <button type="button" id="reveal-actual-button" class="secondary-button" hidden>Reveal</button>
+        <button type="button" id="reveal-actual-button" class="link-button" hidden>Reveal</button>
+        <details class="metrics-glossary" id="metrics-glossary">
+          <summary class="link-button" title="What do these numbers mean?" aria-label="What do these numbers mean?">Glossary</summary>
+          <dl id="metrics-glossary-list" class="metrics-glossary-list"></dl>
+        </details>
       </div>
 
-      <p id="results-error-line" class="results-error-line" hidden></p>
-
-      <details class="metrics-glossary" id="metrics-glossary">
-        <summary>What do these numbers mean?</summary>
-        <dl id="metrics-glossary-list" class="metrics-glossary-list"></dl>
-      </details>
-
-      <div id="live-status-panel" class="live-status-panel" hidden>
-        <div class="live-status-header">
-          <span>Live status</span>
-          <button type="button" class="info-icon" data-info-key="inferenceTime" aria-label="What does per-move inference time mean?">i</button>
-        </div>
-        <p id="live-status-text" class="live-status-text"></p>
-        <div class="live-status-actions">
-          <button id="jump-to-live" type="button" class="secondary-button" hidden>Jump to live</button>
-          <button id="show-full-analysis" type="button" class="secondary-button" hidden>Show full-game analysis</button>
-          <button id="stop-live" type="button" class="secondary-button" hidden>Stop</button>
-        </div>
+      <div id="live-status-panel" class="card live-status-panel" hidden>
+        <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+        <span id="live-status-text" class="live-status-text"></span>
+        <button type="button" class="info-icon" data-info-key="liveClock" aria-label="About live timing">i</button>
+        <span class="live-status-actions">
+          <button id="jump-to-live" type="button" class="secondary-button small" hidden>Jump to live</button>
+          <button id="show-full-analysis" type="button" class="secondary-button small" hidden>Full analysis</button>
+          <button id="stop-live" type="button" class="secondary-button small" hidden>Stop</button>
+        </span>
       </div>
 
-      <div id="sample-meta-box" class="sample-meta-box" hidden></div>
+      <div id="sample-meta-box" class="card sample-meta-box" hidden></div>
 
-      <div id="warnings-box" class="warnings-box" hidden></div>
+      <details id="warnings-box" class="card warnings-box" hidden></details>
 
-      <div class="suspicion-section">
-        <h2 class="suspicion-heading">Suspicion score <button type="button" class="info-icon" data-info-key="suspicion" aria-label="What is the suspicion score?">i</button></h2>
-        <p class="suspicion-caption">
-          Suspicion score is a supplementary flag for human review, not proof of cheating. It is
-          S_att, the attention-weighted average rating-point gap between the model's per-move
-          estimate and the player's baseline over the whole game. In thesis evaluation, this
-          score separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).
-        </p>
-        <div class="suspicion-bar-row">
-          <span class="suspicion-label">White</span>
-          <div class="suspicion-scale-wrap">
-            <div id="white-suspicion-marker" class="suspicion-marker" hidden>
-              <span class="suspicion-marker-value" id="white-suspicion-marker-value">-</span>
-            </div>
-            <div id="white-suspicion-scale" class="suspicion-scale">
-              <div class="suspicion-zone suspicion-zone-typical" id="white-zone-typical"><span class="suspicion-zone-label"><span class="zone-label-full">Typical</span><span class="zone-label-short">Typical</span></span></div>
-              <div class="suspicion-zone suspicion-zone-unusual" id="white-zone-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Unusual</span><span class="zone-label-short">Unusual</span></span></div>
-              <div class="suspicion-zone suspicion-zone-highly-unusual" id="white-zone-highly-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Highly unusual</span><span class="zone-label-short">High</span></span></div>
-            </div>
-          </div>
-          <span id="white-suspicion-value" class="suspicion-value">-</span>
+      <div class="card suspicion-section">
+        <div class="card-head">
+          <h2 class="card-title">Suspicion <button type="button" class="info-icon" data-info-key="suspicion" aria-label="What is the suspicion score?">i</button></h2>
+          <span class="card-subtle">Review aid, not proof</span>
+          <span class="card-head-spacer"></span>
+          <span id="suspicion-baseline-warning" class="chip chip-warn" hidden>Self-estimated baseline <button type="button" class="info-icon" data-info-key="baseline" aria-label="What is the baseline?">i</button></span>
+          <span id="suspicion-label-provisional" class="chip chip-warn" hidden>Provisional cutoffs <button type="button" class="info-icon" data-info-key="suspicionProvisional" aria-label="What does provisional mean here?">i</button></span>
+          <button type="button" class="info-icon" id="suspicion-label-info" data-info-key="suspicionLabel" aria-label="What do these labels mean?">i</button>
+        </div>
+        <div class="suspicion-bar-row" data-side="white">
+          <span class="suspicion-label"><span class="side-swatch side-swatch-white" aria-hidden="true"></span>White</span>
           <span id="white-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span>
-          <span id="white-baseline-source" class="baseline-source-tag">-</span>
-        </div>
-        <p id="white-suspicion-explain" class="suspicion-explain"></p>
-        <div class="suspicion-bar-row">
-          <span class="suspicion-label">Black</span>
+          <span id="white-suspicion-value" class="suspicion-value">-</span>
           <div class="suspicion-scale-wrap">
-            <div id="black-suspicion-marker" class="suspicion-marker" hidden>
-              <span class="suspicion-marker-value" id="black-suspicion-marker-value">-</span>
+            <div id="white-suspicion-scale" class="suspicion-scale">
+              <div class="suspicion-zone suspicion-zone-typical" id="white-zone-typical"><span class="suspicion-zone-label">Typical</span></div>
+              <div class="suspicion-zone suspicion-zone-unusual" id="white-zone-unusual"><span class="suspicion-zone-label">Unusual</span></div>
+              <div class="suspicion-zone suspicion-zone-highly-unusual" id="white-zone-highly-unusual"><span class="suspicion-zone-label">Highly unusual</span></div>
             </div>
-            <div id="black-suspicion-scale" class="suspicion-scale">
-              <div class="suspicion-zone suspicion-zone-typical" id="black-zone-typical"><span class="suspicion-zone-label"><span class="zone-label-full">Typical</span><span class="zone-label-short">Typical</span></span></div>
-              <div class="suspicion-zone suspicion-zone-unusual" id="black-zone-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Unusual</span><span class="zone-label-short">Unusual</span></span></div>
-              <div class="suspicion-zone suspicion-zone-highly-unusual" id="black-zone-highly-unusual"><span class="suspicion-zone-label"><span class="zone-label-full">Highly unusual</span><span class="zone-label-short">High</span></span></div>
-            </div>
+            <div id="white-suspicion-marker" class="suspicion-marker" hidden></div>
           </div>
-          <span id="black-suspicion-value" class="suspicion-value">-</span>
+        </div>
+        <div class="suspicion-bar-row" data-side="black">
+          <span class="suspicion-label"><span class="side-swatch side-swatch-black" aria-hidden="true"></span>Black</span>
           <span id="black-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span>
-          <span id="black-baseline-source" class="baseline-source-tag">-</span>
-        </div>
-        <p id="black-suspicion-explain" class="suspicion-explain"></p>
-        <p id="suspicion-label-caption" class="suspicion-label-caption" hidden>
-          Compared with ordinary rated games from the thesis test set. Not evidence of engine
-          use on its own.
-          <button type="button" class="info-icon" data-info-key="suspicionLabel" aria-label="What do these labels mean?">i</button>
-        </p>
-        <p id="suspicion-label-provisional" class="suspicion-label-provisional" hidden>
-          <span id="suspicion-label-provisional-text"></span>
-          <button type="button" class="info-icon" data-info-key="suspicionProvisional" aria-label="What does provisional mean here?">i</button>
-        </p>
-      </div>
-
-      <div class="analysis-board-row">
-        <div class="board-column">
-          <div class="player-bar" id="player-bar-top">
-            <span class="player-bar-name" id="bar-top-name">-</span>
-            <span class="player-bar-clock" id="bar-top-clock" hidden>-</span>
-            <span class="player-bar-clock-note" id="bar-top-clock-note" hidden>synthesized clock</span>
-            <button type="button" class="info-icon" data-info-key="clockTime" aria-label="What is the remaining clock?">i</button>
-            <span class="player-bar-stat">baseline <button type="button" class="info-icon" data-info-key="baseline" aria-label="What is the baseline rating?">i</button> <span id="bar-top-baseline">-</span></span>
-            <span class="player-bar-stat player-bar-actual" id="bar-top-actual-wrap" hidden>actual <button type="button" class="info-icon" data-info-key="actualRating" aria-label="What is the actual rating?">i</button> <span id="bar-top-actual">-</span></span>
-            <span class="player-bar-stat player-bar-current">now <button type="button" class="info-icon" data-info-key="ratingEstimate" aria-label="What is the rating estimate?">i</button> <span id="bar-top-current">-</span></span>
-            <span class="player-bar-stat player-bar-error" id="bar-top-error-wrap" hidden>off by <button type="button" class="info-icon" data-info-key="error" aria-label="What does off by mean?">i</button> <span id="bar-top-error">-</span></span>
-          </div>
-          <div id="board" class="chessboard"></div>
-          <div class="player-bar" id="player-bar-bottom">
-            <span class="player-bar-name" id="bar-bottom-name">-</span>
-            <span class="player-bar-clock" id="bar-bottom-clock" hidden>-</span>
-            <span class="player-bar-clock-note" id="bar-bottom-clock-note" hidden>synthesized clock</span>
-            <span class="player-bar-stat">baseline <span id="bar-bottom-baseline">-</span></span>
-            <span class="player-bar-stat player-bar-actual" id="bar-bottom-actual-wrap" hidden>actual <span id="bar-bottom-actual">-</span></span>
-            <span class="player-bar-stat player-bar-current">now <span id="bar-bottom-current">-</span></span>
-            <span class="player-bar-stat player-bar-error" id="bar-bottom-error-wrap" hidden>off by <span id="bar-bottom-error">-</span></span>
-          </div>
-          <div class="board-controls">
-            <button id="flip-board" title="Flip board">Flip</button>
-            <button id="step-start" title="Start of game (Up / Home)">&laquo;</button>
-            <button id="step-back" title="Previous move (Left)">&lsaquo;</button>
-            <button id="play-pause" title="Autoplay" aria-pressed="false">Play</button>
-            <button id="step-forward" title="Next move (Right)">&rsaquo;</button>
-            <button id="step-end" title="End of game (Down / End)">&raquo;</button>
-            <span id="ply-indicator">ply 0 / 0</span>
-          </div>
-        </div>
-
-        <div class="side-column">
-          <div class="metrics-panel">
-            <h2>Move details</h2>
-            <div id="metrics-content" class="metrics-content"></div>
-          </div>
-
-          <div class="move-list-panel">
-            <h2>Moves</h2>
-            <p class="move-list-caption">
-              <span class="critical-marker-legend" aria-hidden="true">&starf;</span> marks a
-              critical move (top by attention &times; rating deviation; plies before ply
-              <span id="min-ply-caption">10</span> are excluded from ranking).
-              <button type="button" class="info-icon" data-info-key="criticalMove" aria-label="What is a critical move?">i</button>
-            </p>
-            <p id="synthetic-marker-legend" class="move-list-caption" hidden>
-              <span class="synthetic-marker-legend" aria-hidden="true">&#9632;</span> marks a
-              synthetic: engine moves inserted ply (ground truth from the synthetic corpus).
-              <button type="button" class="info-icon" data-info-key="syntheticMarkers" aria-label="What are these markers?">i</button>
-            </p>
-            <div id="move-list" class="move-list" role="list"></div>
+          <span id="black-suspicion-value" class="suspicion-value">-</span>
+          <div class="suspicion-scale-wrap">
+            <div id="black-suspicion-scale" class="suspicion-scale">
+              <div class="suspicion-zone suspicion-zone-typical" id="black-zone-typical"><span class="suspicion-zone-label">Typical</span></div>
+              <div class="suspicion-zone suspicion-zone-unusual" id="black-zone-unusual"><span class="suspicion-zone-label">Unusual</span></div>
+              <div class="suspicion-zone suspicion-zone-highly-unusual" id="black-zone-highly-unusual"><span class="suspicion-zone-label">Highly unusual</span></div>
+            </div>
+            <div id="black-suspicion-marker" class="suspicion-marker" hidden></div>
           </div>
         </div>
       </div>
 
-      <div class="chart-section">
-        <h2>Rating estimate over the game</h2>
-        <div class="chart-canvas-wrap">
-          <canvas id="rating-chart"></canvas>
+      <div class="card move-list-panel">
+        <div class="card-head">
+          <h2 class="card-title">Moves</h2>
+          <span class="card-head-spacer"></span>
+          <span class="chip chip-plain"><span class="critical-marker-legend" aria-hidden="true">&#9733;</span> critical <button type="button" class="info-icon" data-info-key="criticalMove" aria-label="What is a critical move?">i</button></span>
+          <span id="synthetic-marker-legend" class="chip chip-plain" hidden><span class="synthetic-marker-legend" aria-hidden="true">&#9632;</span> engine move <button type="button" class="info-icon" data-info-key="syntheticMarkers" aria-label="What are these markers?">i</button></span>
         </div>
+        <div id="move-list" class="move-list" role="list"></div>
+      </div>
+
+      <details class="card metrics-panel" id="metrics-panel" open>
+        <summary class="card-head">
+          <h2 class="card-title" id="metrics-title">Move details</h2>
+          <span class="card-head-spacer"></span>
+          <span class="toggle-caret" aria-hidden="true">&#9662;</span>
+        </summary>
+        <div id="metrics-content" class="metrics-content"></div>
+      </details>
+    </aside>
+
+    <section class="card chart-section" aria-label="Rating estimate over the game">
+      <h2 class="chart-title">Rating estimate</h2>
+      <div class="chart-canvas-wrap">
+        <canvas id="rating-chart"></canvas>
       </div>
     </section>
   </main>
+
+  <button type="button" id="new-move-pill" class="new-move-pill" hidden>New move &#8593;</button>
 
   <div id="info-popover" class="info-popover" role="tooltip" hidden>
     <strong id="info-popover-term"></strong>
     <p id="info-popover-text"></p>
   </div>
-
-  <footer class="app-footer">
-    <p>
-      RatingNet prototype. Suspicion scores and critical moves are a review aid for a human
-      fair-play reviewer, not an automated verdict.
-    </p>
-  </footer>
 
   <script src="/static/vendor/jquery/jquery.min.js"></script>
   <script src="/static/vendor/chessboard-js/chessboard-1.0.0.min.js"></script>

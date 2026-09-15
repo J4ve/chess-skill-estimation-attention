@@ -3,34 +3,45 @@ import { Chess } from "./vendor/chess-js/chess.js";
 const API_BASE = "";
 const AUTOPLAY_INTERVAL_MS = 1000;
 const HIDE_ACTUAL_RATINGS_KEY = "ratingnet.hideActualRatings";
+const THEME_KEY = "ratingnet.theme";
+const LIVE_RECONNECT_DELAYS_MS = [1000, 2000, 4000];
+const LIVE_CLOCK_TICK_MS = 100;
+const LOW_CLOCK_SECONDS = 20;
 
-// Mirrors suspicion_labels.LABEL_TEXT in src/suspicion_labels.py.
+// Mirrors suspicion_labels.LABEL_TEXT in src/suspicion_labels.py. The chip
+// shows the short form; the long form goes in its tooltip.
 const SUSPICION_LABEL_TEXT = {
   typical: "Typical",
   unusual: "Unusual",
   highly_unusual: "Highly unusual: worth a human review",
 };
+const SUSPICION_LABEL_SHORT = {
+  typical: "Typical",
+  unusual: "Unusual",
+  highly_unusual: "Highly unusual",
+};
 
 // One or two short, plain-language sentences per metric. Kept as a single
 // object so wording can be edited in one place; used both for the (i)
 // popovers next to each label and for the "What do these numbers mean?"
-// collapsible section, in the same order as listed here.
+// glossary, in the same order as listed here. The page itself shows only
+// short labels, so every explanation lives here.
 const METRIC_INFO = {
   ratingEstimate: {
-    term: "Rating estimate",
+    term: "Rating estimate (est)",
     text: "The model's current guess at this player's chess rating, updated after every move. It can move up or down as the model sees more of how each side plays.",
   },
   actualRating: {
     term: "Actual rating",
-    text: "The player's real rating, taken from the source game's PGN header when it recorded one. It is shown only for comparison and never fed into the estimate.",
+    text: "The player's real rating, taken from the source game's PGN header when it recorded one. It is shown only for comparison and never fed into the estimate. The chip next to it is the estimate minus the actual rating.",
   },
   error: {
-    term: "Error (off by)",
-    text: "How far the current estimate is from the actual rating, in rating points. Positive means the model guessed higher than the real rating, negative means lower.",
+    term: "Error",
+    text: "How far the estimate is from the actual rating, in rating points. Positive means the model guessed higher than the real rating, negative means lower. Final error is the error at the last move.",
   },
   baseline: {
     term: "Baseline and its source",
-    text: "The pre-game rating the suspicion score compares each move against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess. The tag names which source was used.",
+    text: "The pre-game rating the suspicion score compares each move against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess.",
   },
   deviation: {
     term: "Deviation from baseline",
@@ -42,43 +53,47 @@ const METRIC_INFO = {
   },
   criticalMove: {
     term: "Critical move",
-    text: "A move flagged for closer human review because it combines high attention with a large deviation from baseline. It is a pointer to look at, not a verdict.",
+    text: "A move flagged for closer human review because it ranks top by attention times rating deviation. Plies before ply 10 are excluded from the ranking. It is a pointer to look at, not a verdict.",
   },
   suspicion: {
     term: "Suspicion score (S_att)",
-    text: "An attention-weighted average of how far a side's estimate strayed from its baseline over the whole game. It is a supplementary flag for human review, not proof of cheating: in thesis evaluation it separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).",
+    text: "The attention-weighted average gap, in rating points, between the model's per-move estimate and the player's baseline over the whole game. It is a supplementary flag for human review, not proof of cheating: in thesis evaluation it separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).",
   },
   suspicionLabel: {
-    term: "Typical / Unusual / Highly unusual label",
-    text: "Compares this side's suspicion score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile of those games, Unusual is the 75th-95th percentile, and Highly unusual is above the 95th percentile. It describes how uncommon the score is among ordinary games, not whether anyone cheated; a clean synthetic game in thesis evaluation scored well into the highly-unusual range.",
+    term: "Typical / Unusual / Highly unusual",
+    text: "Compares this side's suspicion score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile, Unusual is the 75th to 95th, and Highly unusual is above the 95th. It describes how uncommon the score is, not whether anyone cheated; a clean synthetic game in thesis evaluation scored well into the highly-unusual range.",
   },
   suspicionProvisional: {
     term: "Provisional cutoffs",
-    text: "The percentile cutoffs behind these labels are still being computed from the full planned sample of held-out test games; this note updates with the current game count and disappears once the full run finishes.",
+    text: "The percentile cutoffs behind these labels are still being computed from the full planned sample of held-out test games; this chip disappears once the full run finishes.",
   },
   clockTime: {
-    term: "Clock remaining and time spent",
-    text: "Each player's remaining time, parsed from the game's own clock annotations, is one of the model's direct inputs: time pressure changes how people play, so the model reads it move by move. Time spent per move is derived from it, not a separate input.",
+    term: "Clock and time spent",
+    text: "Each player's remaining time, parsed from the game's own clock annotations, is one of the model's direct inputs: time pressure changes how people play. Time spent per move (shown in the move list) is derived from it. The highlighted clock is the side to move.",
+  },
+  liveClock: {
+    term: "Live timing",
+    text: "Live clocks are estimated between updates, and Lichess delays spectators by a few moves. The last-move time is how long the model took to score it on this server, which reflects hardware, not the game.",
   },
   provisional: {
-    term: "Provisional badge",
+    term: "Ongoing game",
     text: "Shown when the source game has no final result yet (PGN Result header is \"*\"). The analysis covers only the moves played so far and can change as the game continues.",
   },
   liveVsFull: {
     term: "Live estimate vs full-game analysis",
     text: "The live curve freezes each move's estimate the instant it was computed from a from-scratch rerun up to that move, and never revises it later. Full-game analysis reruns the whole finished game at once and is the more accurate, final view.",
   },
-  inferenceTime: {
-    term: "Per-move inference time",
-    text: "How long the model took to score the latest move on this deployment's hardware, shown while watching a live game. It reflects server load and hardware, not anything about the game itself.",
-  },
   testError: {
     term: "Saved test error",
     text: "This sample's actual prediction error from the thesis's held-out test evaluation, saved ahead of time so it does not depend on this deployment. The thesis model was off by about 172 rating points on average across the full test set.",
   },
+  samples: {
+    term: "Sample games",
+    text: "Games drawn from the thesis's held-out test partition, or from its synthetic anomaly corpus where tagged. They illustrate model behaviour, not examples of fair or unfair play.",
+  },
   syntheticMarkers: {
-    term: "Synthetic ground-truth markers",
-    text: "A square marker on the move list and chart marks a ply where this synthetic sample's move was swapped for a stronger engine's move, known for certain because the game was built that way. Real games never carry this marker.",
+    term: "Engine-move markers",
+    text: "On a synthetic sample, a marked ply is one where the move was swapped for a stronger engine's move, known for certain because the game was built that way. Both sides can still score high, because the rating model reads Maia's play as a much stronger player than its nominal band. Real games never carry this marker.",
   },
 };
 
@@ -94,10 +109,12 @@ const state = {
   criticalByPly: new Map(),
   criticalCounts: { white: 0, black: 0 },
   sampleMeta: null,
+  sampleMetaExpanded: false,
   substitutedPlies: new Set(),
   samplesManifest: null,
   showActualRatings: true,
   activeInfoIcon: null,
+  boardInView: true,
   live: {
     active: false,
     following: true,
@@ -107,11 +124,80 @@ const state = {
     eventSource: null,
     frozenPerMove: [],
     reconnectAttempts: 0,
+    reconnectTimer: null,
+    // "idle" | "connecting" | "connected" | "reconnecting" | "disconnected" | "finished" | "stopped" | "error"
+    connState: "idle",
+    clockAnchor: null, // { ply, side, seconds, at }
+    clockTimer: null,
+    lastInferenceMs: null,
   },
 };
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Runs `fn` and puts the window scroll position back if anything inside it
+// moved the page (re-rendering, collapsing the input bar, and so on).
+function preservingWindowScroll(fn) {
+  const x = window.scrollX;
+  const y = window.scrollY;
+  try {
+    return fn();
+  } finally {
+    if (window.scrollX !== x || window.scrollY !== y) {
+      window.scrollTo(x, y);
+    }
+  }
+}
+
+// --- Theme -----------------------------------------------------------------
+
+function effectiveTheme() {
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit === "light" || explicit === "dark") return explicit;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function syncThemeToggleLabel() {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  $("theme-toggle").setAttribute("aria-label", `Switch to ${next} mode`);
+}
+
+function setupThemeToggle() {
+  syncThemeToggleLabel();
+  $("theme-toggle").addEventListener("click", () => {
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch (err) {
+      // Storage unavailable; the choice just won't persist across reloads.
+    }
+    onThemeChanged();
+  });
+  if (window.matchMedia) {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const listener = () => {
+      if (!document.documentElement.hasAttribute("data-theme")) onThemeChanged();
+    };
+    if (query.addEventListener) query.addEventListener("change", listener);
+  }
+}
+
+function onThemeChanged() {
+  syncThemeToggleLabel();
+  if (state.result) renderChart(state.result);
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 // --- Actual rating reveal/hide -------------------------------------------
@@ -149,20 +235,20 @@ function maskedOrRounded(value) {
   return String(Math.round(value));
 }
 
-function actualAndErrorText(current, actual) {
-  if (typeof actual !== "number") return "not available";
+function actualAndErrorHtml(current, actual) {
+  if (typeof actual !== "number") return "n/a";
   if (!actualRatingsVisible()) return "hidden";
-  return `${Math.round(actual)} (off by ${formatSignedError(current - actual)})`;
+  return `${Math.round(actual)}<span class="delta">${formatSignedError(current - actual)}</span>`;
 }
 
 function rerenderForActualRatingToggle() {
   if (!state.result) return;
-  renderFinalErrorLine(state.result);
   renderSuspicion(state.result);
   renderChart(state.result);
   renderPlayerBars(state.currentPly);
   renderMetricsPanel(state.currentPly);
   renderSampleMetaBox(state.sampleMeta);
+  syncLiveClockTicker();
 }
 
 function setActualRatingsHidden(hidden) {
@@ -206,7 +292,7 @@ function showInfoPopover(iconEl) {
   popover.style.left = "0px";
   popover.style.top = "0px";
   const popRect = popover.getBoundingClientRect();
-  let left = Math.max(margin, Math.min(iconRect.left, window.innerWidth - popRect.width - margin));
+  const left = Math.max(margin, Math.min(iconRect.left, window.innerWidth - popRect.width - margin));
   let top = iconRect.bottom + margin;
   if (top + popRect.height > window.innerHeight - margin) {
     top = iconRect.top - popRect.height - margin;
@@ -230,6 +316,7 @@ function setupInfoPopovers() {
   document.addEventListener("click", (evt) => {
     const icon = evt.target.closest(".info-icon");
     if (icon) {
+      evt.preventDefault();
       evt.stopPropagation();
       showInfoPopover(icon);
       return;
@@ -237,6 +324,10 @@ function setupInfoPopovers() {
     if (!evt.target.closest("#info-popover")) {
       hideInfoPopover();
     }
+    // Close open dropdown-style <details> (options, glossary) on outside click.
+    document.querySelectorAll(".options-menu[open], .metrics-glossary[open]").forEach((el) => {
+      if (!el.contains(evt.target)) el.open = false;
+    });
   });
   document.addEventListener("mouseover", (evt) => {
     const icon = evt.target.closest(".info-icon");
@@ -255,7 +346,12 @@ function setupInfoPopovers() {
     if (icon) hideInfoPopover();
   });
   document.addEventListener("keydown", (evt) => {
-    if (evt.key === "Escape") hideInfoPopover();
+    if (evt.key === "Escape") {
+      hideInfoPopover();
+      document.querySelectorAll(".options-menu[open], .metrics-glossary[open]").forEach((el) => {
+        el.open = false;
+      });
+    }
   });
 }
 
@@ -265,6 +361,8 @@ function renderMetricsGlossary() {
     .map((info) => `<dt>${escapeHtml(info.term)}</dt><dd>${escapeHtml(info.text)}</dd>`)
     .join("");
 }
+
+// --- Input bar ---------------------------------------------------------------
 
 function setupTabs() {
   const buttons = document.querySelectorAll(".tab-button");
@@ -280,7 +378,7 @@ function setupTabs() {
         panel.classList.toggle("active", panel.dataset.panel === tab);
       });
       // Samples and Live have their own load/watch controls instead of the
-      // shared "Analyze game" button.
+      // shared "Analyze" button.
       $("submit-button").hidden = tab === "samples" || tab === "live";
       clearError();
       if (tab === "samples") {
@@ -290,11 +388,16 @@ function setupTabs() {
   });
 }
 
+function setInputPanelCollapsed(collapsed) {
+  const panel = $("input-panel");
+  panel.classList.toggle("collapsed", collapsed);
+  $("input-panel-toggle").setAttribute("aria-expanded", collapsed ? "false" : "true");
+  $("input-panel-toggle-label").textContent = collapsed ? "Load game" : "Hide";
+}
+
 function setupInputPanelToggle() {
   $("input-panel-toggle").addEventListener("click", () => {
-    const panel = $("input-panel");
-    const collapsed = panel.classList.toggle("collapsed");
-    $("input-panel-toggle").setAttribute("aria-expanded", collapsed ? "false" : "true");
+    setInputPanelCollapsed(!$("input-panel").classList.contains("collapsed"));
   });
 }
 
@@ -302,6 +405,18 @@ function setupBoard() {
   state.board = window.Chessboard("board", {
     position: "start",
     pieceTheme: "/static/vendor/chessboard-js/img/chesspieces/wikipedia/{piece}.png",
+  });
+  let resizeFrame = null;
+  window.addEventListener("resize", () => {
+    if (resizeFrame) cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = null;
+      if (!state.result) return;
+      // chessboard.js only measures its container when asked; resizing also
+      // rebuilds the squares, so the last-move highlight is re-applied.
+      state.board.resize();
+      highlightCurrentPly();
+    });
   });
 }
 
@@ -320,7 +435,7 @@ function showError(message) {
 function setLoading(isLoading) {
   const button = $("submit-button");
   button.disabled = isLoading;
-  button.textContent = isLoading ? "Analyzing..." : "Analyze game";
+  button.textContent = isLoading ? "Analyzing..." : "Analyze";
 }
 
 async function parseErrorDetail(response) {
@@ -335,6 +450,8 @@ async function parseErrorDetail(response) {
   }
 }
 
+// --- Samples -----------------------------------------------------------------
+
 async function loadSamplesManifest() {
   if (state.samplesManifest) {
     renderSamplesGrid(state.samplesManifest.samples || []);
@@ -342,7 +459,7 @@ async function loadSamplesManifest() {
   }
   const statusEl = $("samples-status");
   statusEl.hidden = false;
-  statusEl.textContent = "Loading samples...";
+  statusEl.textContent = "Loading...";
   try {
     const response = await fetch(`${API_BASE}/static/samples/manifest.json`);
     if (!response.ok) {
@@ -366,48 +483,58 @@ function sampleBadgeLabel(sample) {
   return bits.join(" · ");
 }
 
+// One-line description with a "more" toggle that expands it in place.
+function buildMoreToggleLine(className, text) {
+  const line = document.createElement("div");
+  line.className = className;
+  const span = document.createElement("span");
+  span.className = `${className}-text`;
+  span.textContent = text;
+  line.appendChild(span);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "more-toggle";
+  toggle.textContent = "more";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+    const expanded = line.classList.toggle("expanded");
+    toggle.textContent = expanded ? "less" : "more";
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  });
+  line.appendChild(toggle);
+  return line;
+}
+
 function buildSampleCard(sample) {
-  const card = document.createElement("button");
-  card.type = "button";
+  const card = document.createElement("div");
   card.className = "sample-card";
   card.dataset.sampleId = sample.id;
 
-  const title = document.createElement("div");
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "sample-card-main";
+  main.dataset.sampleId = sample.id;
+  main.title = [sample.source, sample.selection_label].filter(Boolean).join(" · ");
+
+  const title = document.createElement("span");
   title.className = "sample-card-title";
   title.textContent = sample.title || sample.id;
-  card.appendChild(title);
+  main.appendChild(title);
 
   const badgeLine = sampleBadgeLabel(sample);
   if (badgeLine) {
-    const badge = document.createElement("div");
+    const badge = document.createElement("span");
     badge.className = "sample-card-badge-line";
     badge.textContent = badgeLine;
-    card.appendChild(badge);
+    main.appendChild(badge);
   }
+  main.addEventListener("click", () => loadAndAnalyzeSample(sample, card));
+  card.appendChild(main);
 
   if (sample.description) {
-    const desc = document.createElement("div");
-    desc.className = "sample-card-description";
-    desc.textContent = sample.description;
-    card.appendChild(desc);
+    card.appendChild(buildMoreToggleLine("sample-card-desc", sample.description));
   }
-
-  const tags = [];
-  if (sample.source) tags.push(sample.source);
-  if (sample.selection_label) tags.push(sample.selection_label);
-  if (tags.length) {
-    const tagRow = document.createElement("div");
-    tagRow.className = "sample-card-tags";
-    tags.forEach((tag) => {
-      const span = document.createElement("span");
-      span.className = "sample-tag";
-      span.textContent = tag;
-      tagRow.appendChild(span);
-    });
-    card.appendChild(tagRow);
-  }
-
-  card.addEventListener("click", () => loadAndAnalyzeSample(sample, card));
   return card;
 }
 
@@ -417,7 +544,7 @@ function renderSamplesGrid(samples) {
   grid.innerHTML = "";
   if (!samples.length) {
     statusEl.hidden = false;
-    statusEl.textContent = "No sample games are available yet.";
+    statusEl.textContent = "No samples available.";
     return;
   }
   statusEl.hidden = true;
@@ -430,26 +557,17 @@ function renderSamplesGrid(samples) {
   });
 
   groups.forEach((groupSamples, groupName) => {
-    const section = document.createElement("div");
-    section.className = "samples-group";
-
     const heading = document.createElement("h3");
     heading.className = "samples-group-title";
     heading.textContent = groupName;
-    section.appendChild(heading);
-
-    const row = document.createElement("div");
-    row.className = "samples-grid-row";
-    groupSamples.forEach((sample) => row.appendChild(buildSampleCard(sample)));
-    section.appendChild(row);
-
-    grid.appendChild(section);
+    grid.appendChild(heading);
+    groupSamples.forEach((sample) => grid.appendChild(buildSampleCard(sample)));
   });
 }
 
 async function loadAndAnalyzeSample(sample, cardEl) {
   clearError();
-  stopLiveStream();
+  stopLiveStream({ silent: true });
   const topK = currentTopK();
   const minPly = currentMinPly();
   const grid = $("samples-grid");
@@ -503,7 +621,7 @@ function currentBaselines() {
 
 async function submitAnalysis() {
   clearError();
-  stopLiveStream();
+  stopLiveStream({ silent: true });
   const topK = currentTopK();
   const minPly = currentMinPly();
   const baselines = currentBaselines();
@@ -569,6 +687,8 @@ async function submitAnalysis() {
   renderResult(result);
 }
 
+// --- Result rendering ----------------------------------------------------------
+
 function buildFenTimeline(headers, perMove) {
   const chess = new Chess();
   const fens = ["start"];
@@ -621,6 +741,14 @@ function buildCriticalIndex(criticalMoves) {
 }
 
 function renderResult(result, opts = {}) {
+  preservingWindowScroll(() => renderResultInner(result, opts));
+}
+
+function renderResultInner(result, opts) {
+  const moveList = $("move-list");
+  const previousListScroll = moveList.scrollTop;
+  const wasLiveOnScreen = Boolean(state.result) && !$("live-badge").hidden;
+
   state.result = result;
   state.fenAtPly = buildFenTimeline(result.headers, result.per_move);
   state.currentPly = state.fenAtPly.length - 1;
@@ -630,16 +758,17 @@ function renderResult(result, opts = {}) {
   state.criticalByPly = criticalIndex.map;
   state.criticalCounts = criticalIndex.counts;
 
-  state.sampleMeta = opts.sampleMeta || null;
+  if (!opts.live || !wasLiveOnScreen) {
+    state.sampleMeta = opts.sampleMeta || null;
+    state.sampleMetaExpanded = false;
+  }
   state.substitutedPlies = new Set((state.sampleMeta && state.sampleMeta.substituted_plies) || []);
   renderSampleMetaBox(state.sampleMeta);
   $("synthetic-marker-legend").hidden = state.substitutedPlies.size === 0;
 
   $("live-badge").hidden = !opts.live;
   if (!opts.live) {
-    state.live.finished = false;
-    $("live-status-text").textContent = "";
-    syncLiveStatusPanelVisibility();
+    resetLiveSessionUi();
   }
 
   stopAutoplay();
@@ -648,49 +777,33 @@ function renderResult(result, opts = {}) {
   // time; the container is still `hidden` (0 width) until this point, so it
   // must be explicitly resized once the panel becomes visible.
   $("results-panel").hidden = false;
-  state.board.orientation("white");
+  if (!opts.live || !wasLiveOnScreen) {
+    state.board.orientation("white");
+  }
   state.board.resize();
 
   const headers = result.headers || {};
   $("results-title").textContent = `${headers.White || "White"} vs ${headers.Black || "Black"}`;
-  $("provisional-badge").hidden = !result.provisional;
-  $("min-ply-caption").textContent = result.critical_moves_min_ply;
+  $("results-title").title = $("results-title").textContent;
+  $("provisional-badge").hidden = !result.provisional || Boolean(opts.live);
+  METRIC_INFO.criticalMove.text = METRIC_INFO.criticalMove.text.replace(
+    /before ply \d+/,
+    `before ply ${result.critical_moves_min_ply}`
+  );
 
-  renderFinalErrorLine(result);
   renderWarnings(result.warnings || []);
   renderSuspicion(result);
   renderChart(result);
   renderMoveList(result.per_move);
-  renderBoardAtPly(state.currentPly);
+  if (opts.live && !state.live.following) {
+    moveList.scrollTop = previousListScroll;
+  }
+  renderBoardAtPly(state.currentPly, { fromAutoplay: true, keepListScroll: opts.live && !state.live.following });
 
-  $("input-panel").classList.add("collapsed");
-  $("input-panel-toggle").setAttribute("aria-expanded", "false");
-}
-
-function renderFinalErrorLine(result) {
-  const el = $("results-error-line");
-  const whiteKnown = typeof result.white_actual_rating === "number";
-  const blackKnown = typeof result.black_actual_rating === "number";
-  if (!whiteKnown && !blackKnown) {
-    el.hidden = true;
-    el.textContent = "";
-    return;
+  $("input-panel-toggle").hidden = false;
+  if (!opts.live || !wasLiveOnScreen) {
+    setInputPanelCollapsed(true);
   }
-  const parts = [];
-  if (whiteKnown) {
-    const text = actualRatingsVisible()
-      ? formatSignedError(result.white_final_rating - result.white_actual_rating)
-      : "hidden";
-    parts.push(`White final error ${text}`);
-  }
-  if (blackKnown) {
-    const text = actualRatingsVisible()
-      ? formatSignedError(result.black_final_rating - result.black_actual_rating)
-      : "hidden";
-    parts.push(`Black final error ${text}`);
-  }
-  el.textContent = parts.join(" · ");
-  el.hidden = false;
 }
 
 function renderWarnings(warnings) {
@@ -700,9 +813,12 @@ function renderWarnings(warnings) {
     box.innerHTML = "";
     return;
   }
+  const wasOpen = box.open;
   box.hidden = false;
   const items = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("");
-  box.innerHTML = `<strong>Warnings</strong><ul>${items}</ul>`;
+  const label = warnings.length === 1 ? "1 warning" : `${warnings.length} warnings`;
+  box.innerHTML = `<summary>&#9888; ${label}</summary><ul>${items}</ul>`;
+  box.open = wasOpen;
 }
 
 function renderSampleMetaBox(sampleMeta) {
@@ -715,61 +831,58 @@ function renderSampleMetaBox(sampleMeta) {
 
   const tags = [sampleMeta.source, sampleMeta.selection_label]
     .filter(Boolean)
-    .map((tag) => `<span class="sample-badge">${escapeHtml(tag)}</span>`)
+    .map((tag) => `<span class="sample-tag">${escapeHtml(tag)}</span>`)
     .join("");
 
   const visible = actualRatingsVisible();
-  const facts = [];
-  if (typeof sampleMeta.white_actual_rating === "number") {
-    facts.push(`White actual rating ${infoIconHtml("actualRating")} ${visible ? Math.round(sampleMeta.white_actual_rating) : "hidden"}`);
+  const rows = [];
+  const pts = (v) => (visible ? `${v.toFixed(1)} pts` : "hidden");
+  if (typeof sampleMeta.white_actual_rating === "number" || typeof sampleMeta.black_actual_rating === "number") {
+    rows.push([
+      `Actual rating ${infoIconHtml("actualRating")}`,
+      `W ${maskedOrRounded(sampleMeta.white_actual_rating)} · B ${maskedOrRounded(sampleMeta.black_actual_rating)}`,
+    ]);
   }
-  if (typeof sampleMeta.black_actual_rating === "number") {
-    facts.push(`Black actual rating ${visible ? Math.round(sampleMeta.black_actual_rating) : "hidden"}`);
-  }
-  if (typeof sampleMeta.white_test_error === "number") {
-    const value = visible ? `${sampleMeta.white_test_error.toFixed(1)} pts` : "hidden";
-    facts.push(`White saved test error ${infoIconHtml("testError")} ${value} (compare to the estimate above)`);
-  }
-  if (typeof sampleMeta.black_test_error === "number") {
-    const value = visible ? `${sampleMeta.black_test_error.toFixed(1)} pts` : "hidden";
-    facts.push(`Black saved test error ${value} (compare to the estimate above)`);
+  if (typeof sampleMeta.white_test_error === "number" || typeof sampleMeta.black_test_error === "number") {
+    const w = typeof sampleMeta.white_test_error === "number" ? pts(sampleMeta.white_test_error) : "-";
+    const b = typeof sampleMeta.black_test_error === "number" ? pts(sampleMeta.black_test_error) : "-";
+    rows.push([`Saved test error ${infoIconHtml("testError")}`, `W ${w} · B ${b}`]);
   }
   if (typeof sampleMeta.substitution_rate === "number") {
-    facts.push(`${Math.round(sampleMeta.substitution_rate * 100)}% of moves substituted`);
+    rows.push([`Engine moves ${infoIconHtml("syntheticMarkers")}`, `${Math.round(sampleMeta.substitution_rate * 100)}% of moves`]);
   }
   if (sampleMeta.maia_band) {
-    facts.push(`Maia band ${escapeHtml(String(sampleMeta.maia_band))}`);
+    rows.push(["Maia band", escapeHtml(String(sampleMeta.maia_band))]);
   }
   if (sampleMeta.engine) {
-    facts.push(`Substitution engine: ${escapeHtml(sampleMeta.engine)}`);
+    rows.push(["Engine", escapeHtml(sampleMeta.engine)]);
   }
   if (typeof sampleMeta.s_att_eval === "number") {
-    facts.push(`Saved suspicion score (S_att) ${sampleMeta.s_att_eval.toFixed(1)} (compare to the bars above)`);
+    rows.push([`Saved S_att ${infoIconHtml("suspicion")}`, sampleMeta.s_att_eval.toFixed(1)]);
   }
 
-  const syntheticNote = sampleMeta.maia_band
-    ? `<p class="sample-meta-description">Both sides can score high on this synthetic sample because the rating ` +
-      `model reads Maia ${escapeHtml(String(sampleMeta.maia_band))}'s play as coming from a much stronger player ` +
-      `than its nominal band; that mismatch is the known reason the computed suspicion score is weak here. The move ` +
-      `list and chart mark the side with engine moves inserted. ${infoIconHtml("syntheticMarkers")}</p>`
+  const expanded = state.sampleMetaExpanded;
+  const details = expanded
+    ? `<dl class="sample-meta-details">
+        ${sampleMeta.description ? `<p class="sample-meta-description">${escapeHtml(sampleMeta.description)}</p>` : ""}
+        ${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}
+      </dl>`
     : "";
 
   box.innerHTML = `
     <div class="sample-meta-header">
-      <strong>${escapeHtml(sampleMeta.title || "Sample game")}</strong>
+      <span class="sample-meta-title">${escapeHtml(sampleMeta.title || "Sample game")}</span>
       ${tags}
+      <span class="card-head-spacer"></span>
+      <button type="button" class="more-toggle" id="sample-meta-more" aria-expanded="${expanded}">${expanded ? "less" : "more"}</button>
     </div>
-    ${sampleMeta.description ? `<p class="sample-meta-description">${escapeHtml(sampleMeta.description)}</p>` : ""}
-    ${syntheticNote}
-    ${facts.length ? `<p class="sample-meta-facts">${facts.join(" &middot; ")}</p>` : ""}
+    ${details}
   `;
   box.hidden = false;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  $("sample-meta-more").addEventListener("click", () => {
+    state.sampleMetaExpanded = !state.sampleMetaExpanded;
+    renderSampleMetaBox(state.sampleMeta);
+  });
 }
 
 function renderSuspicion(result) {
@@ -779,31 +892,26 @@ function renderSuspicion(result) {
 
   $("white-suspicion-value").textContent = whiteScore.toFixed(1);
   $("black-suspicion-value").textContent = blackScore.toFixed(1);
+  const gapTitle = (score, baseline, source) =>
+    `About ${Math.round(score)} rating points of attention-weighted gap from the baseline ` +
+    `(${maskedOrRounded(baseline)}, ${formatSource(source)})`;
+  $("white-suspicion-value").title = gapTitle(whiteScore, result.white_baseline, result.white_baseline_source);
+  $("black-suspicion-value").title = gapTitle(blackScore, result.black_baseline, result.black_baseline_source);
 
-  $("white-baseline-source").textContent = `${maskedOrRounded(result.white_baseline)} (${formatSource(result.white_baseline_source)})`;
-  $("black-baseline-source").textContent = `${maskedOrRounded(result.black_baseline)} (${formatSource(result.black_baseline_source)})`;
-
-  $("white-suspicion-explain").textContent =
-    `About ${Math.round(whiteScore)} rating points of attention-weighted gap between the ` +
-    `model's estimate and White's baseline.`;
-  $("black-suspicion-explain").textContent =
-    `About ${Math.round(blackScore)} rating points of attention-weighted gap between the ` +
-    `model's estimate and Black's baseline.`;
+  $("suspicion-baseline-warning").hidden = ![result.white_baseline_source, result.black_baseline_source].includes(
+    "self_prediction_fallback"
+  );
 
   renderSuspicionScale("white", whiteScore, result.white_suspicion_label, cutoffsUsed, result.provisional);
   renderSuspicionScale("black", blackScore, result.black_suspicion_label, cutoffsUsed, result.provisional);
 
-  $("suspicion-label-caption").hidden = !cutoffsUsed;
-  const provisionalEl = $("suspicion-label-provisional");
+  $("suspicion-label-info").hidden = !cutoffsUsed;
   const isProvisional = Boolean(cutoffsUsed && cutoffsUsed.provisional);
-  provisionalEl.hidden = !isProvisional;
+  $("suspicion-label-provisional").hidden = !isProvisional;
   if (isProvisional) {
     const n = cutoffsUsed.provisional_games;
-    $("suspicion-label-provisional-text").textContent =
-      `Provisional cutoffs${typeof n === "number" ? `: based on ${n.toLocaleString()} test games` : ""}.`;
-    if (cutoffsUsed.provisional_note) {
-      METRIC_INFO.suspicionProvisional.text = cutoffsUsed.provisional_note;
-    }
+    const count = typeof n === "number" ? `Based on ${n.toLocaleString()} test games so far. ` : "";
+    METRIC_INFO.suspicionProvisional.text = count + (cutoffsUsed.provisional_note || METRIC_INFO.suspicionProvisional.text);
   }
 }
 
@@ -814,7 +922,6 @@ function renderSuspicion(result) {
 // how far the score sits above p95.
 function renderSuspicionScale(prefix, score, label, cutoffs, provisional) {
   const marker = $(`${prefix}-suspicion-marker`);
-  const markerValue = $(`${prefix}-suspicion-marker-value`);
   const zoneTypical = $(`${prefix}-zone-typical`);
   const zoneUnusual = $(`${prefix}-zone-unusual`);
   const zoneHighlyUnusual = $(`${prefix}-zone-highly-unusual`);
@@ -841,7 +948,7 @@ function renderSuspicionScale(prefix, score, label, cutoffs, provisional) {
 
   marker.hidden = false;
   marker.style.left = `${clampPct((score / scaleMax) * 100)}%`;
-  markerValue.textContent = provisional ? `${score.toFixed(1)}*` : score.toFixed(1);
+  marker.title = `${score.toFixed(1)} (Typical below ${p75.toFixed(0)}, Highly unusual above ${p95.toFixed(0)})`;
 
   renderSuspicionLabelChip(prefix, label, provisional);
 }
@@ -860,25 +967,44 @@ function renderSuspicionLabelChip(prefix, label, provisional) {
   }
   chip.hidden = false;
   chip.dataset.level = label;
-  const text = SUSPICION_LABEL_TEXT[label] || label;
-  chip.textContent = provisional ? `${text} (so far)` : text;
-  chip.title = provisional ? "Provisional: based on the moves seen so far and can change as the game continues." : "";
+  const short = SUSPICION_LABEL_SHORT[label] || label;
+  const long = SUSPICION_LABEL_TEXT[label] || label;
+  chip.textContent = provisional ? `${short} so far` : short;
+  chip.title = provisional ? `${long}. Based on the moves so far; can change as the game continues.` : long;
 }
 
 function formatSource(source) {
   switch (source) {
     case "request":
-      return "user-supplied";
+      return "entered";
     case "pgn_header":
-      return "PGN header";
+      return "PGN";
     case "self_prediction_fallback":
-      return "model self-prediction, less reliable";
+      return "self-estimate, less reliable";
     default:
       return source;
   }
 }
 
-function buildSyncPlugin() {
+// --- Chart ---------------------------------------------------------------------
+
+function chartPalette() {
+  return {
+    white: cssVar("--white-side"),
+    black: cssVar("--black-side"),
+    whiteRef: cssVar("--white-side-ref"),
+    blackRef: cssVar("--black-side-ref"),
+    grid: cssVar("--chart-grid"),
+    tick: cssVar("--chart-tick"),
+    cursor: cssVar("--chart-cursor"),
+    ring: cssVar("--chart-point-ring"),
+    surface: cssVar("--surface"),
+    synthetic: cssVar("--synthetic"),
+    text: cssVar("--text"),
+  };
+}
+
+function buildSyncPlugin(palette) {
   return {
     id: "plySync",
     afterDatasetsDraw(chart) {
@@ -889,8 +1015,8 @@ function buildSyncPlugin() {
 
       // Small markers for critical plies, drawn under the current-ply dot.
       [
-        ["white", 0, "#3a6ea5"],
-        ["black", 1, "#a54a3a"],
+        ["white", 0, palette.white],
+        ["black", 1, palette.black],
       ].forEach(([side, dsIndex, color]) => {
         const meta = chart.getDatasetMeta(dsIndex);
         if (!meta || !meta.data) return;
@@ -901,7 +1027,7 @@ function buildSyncPlugin() {
           ctx.save();
           ctx.beginPath();
           ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = "#fff";
+          ctx.fillStyle = palette.surface;
           ctx.fill();
           ctx.lineWidth = 1.5;
           ctx.strokeStyle = color;
@@ -920,10 +1046,10 @@ function buildSyncPlugin() {
             if (!point) return;
             const half = 4;
             ctx.save();
-            ctx.fillStyle = "#e0a82f";
+            ctx.fillStyle = palette.synthetic;
             ctx.fillRect(point.x - half, point.y - half, half * 2, half * 2);
-            ctx.lineWidth = 1.5;
-            ctx.strokeStyle = "#8a6a12";
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = palette.ring;
             ctx.strokeRect(point.x - half, point.y - half, half * 2, half * 2);
             ctx.restore();
           });
@@ -940,7 +1066,7 @@ function buildSyncPlugin() {
         ctx.lineTo(linePoint.x, area.bottom);
         ctx.setLineDash([4, 3]);
         ctx.lineWidth = 1;
-        ctx.strokeStyle = "rgba(60, 60, 60, 0.45)";
+        ctx.strokeStyle = palette.cursor;
         ctx.stroke();
         ctx.restore();
       }
@@ -953,9 +1079,9 @@ function buildSyncPlugin() {
         ctx.save();
         ctx.beginPath();
         ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = dsIndex === 0 ? "#3a6ea5" : "#a54a3a";
+        ctx.fillStyle = dsIndex === 0 ? palette.white : palette.black;
         ctx.lineWidth = 1.5;
-        ctx.strokeStyle = "#fff";
+        ctx.strokeStyle = palette.ring;
         ctx.fill();
         ctx.stroke();
         ctx.restore();
@@ -978,7 +1104,7 @@ function buildReferenceLineDatasets(side, color, baseline, actual, labels) {
   if (matchesBaseline) {
     return [
       {
-        label: `${side} actual rating (baseline)`,
+        label: `${side} actual (baseline)`,
         data: baselineLine,
         borderColor: color.baseline,
         borderDash: [6, 4],
@@ -1000,7 +1126,7 @@ function buildReferenceLineDatasets(side, color, baseline, actual, labels) {
   ];
   if (actualKnown) {
     datasets.push({
-      label: `${side} actual rating`,
+      label: `${side} actual`,
       data: labels.map(() => actual),
       borderColor: color.actual,
       borderDash: [2, 2],
@@ -1012,6 +1138,7 @@ function buildReferenceLineDatasets(side, color, baseline, actual, labels) {
 }
 
 function renderChart(result) {
+  const palette = chartPalette();
   const perMove = result.per_move;
   const labels = [0, ...perMove.map((m) => m.ply)];
   const whiteRatings = [result.white_baseline, ...perMove.map((m) => m.white_rating)];
@@ -1019,31 +1146,31 @@ function renderChart(result) {
 
   const datasets = [
     {
-      label: "White rating estimate",
+      label: "White estimate",
       data: whiteRatings,
-      borderColor: "#3a6ea5",
+      borderColor: palette.white,
       backgroundColor: "transparent",
       pointRadius: 0,
       borderWidth: 2,
     },
     {
-      label: "Black rating estimate",
+      label: "Black estimate",
       data: blackRatings,
-      borderColor: "#a54a3a",
+      borderColor: palette.black,
       backgroundColor: "transparent",
       pointRadius: 0,
       borderWidth: 2,
     },
     ...buildReferenceLineDatasets(
       "White",
-      { baseline: "#3a6ea5", actual: "#1c4a73" },
+      { baseline: palette.white, actual: palette.whiteRef },
       result.white_baseline,
       result.white_actual_rating,
       labels
     ),
     ...buildReferenceLineDatasets(
       "Black",
-      { baseline: "#a54a3a", actual: "#7a3527" },
+      { baseline: palette.black, actual: palette.blackRef },
       result.black_baseline,
       result.black_actual_rating,
       labels
@@ -1054,6 +1181,7 @@ function renderChart(result) {
   if (state.chart) {
     state.chart.destroy();
   }
+  const tickFont = { size: 12 };
   state.chart = new window.Chart(ctx, {
     type: "line",
     data: { labels, datasets },
@@ -1062,12 +1190,36 @@ function renderChart(result) {
       maintainAspectRatio: false,
       animation: false,
       interaction: { mode: "index", intersect: false },
+      layout: { padding: { top: 0, right: 4 } },
+      plugins: {
+        legend: {
+          position: "top",
+          align: "end",
+          labels: { color: palette.text, boxWidth: 18, boxHeight: 2, padding: 12, font: tickFont },
+        },
+        tooltip: {
+          backgroundColor: palette.surface,
+          titleColor: palette.text,
+          bodyColor: palette.text,
+          borderColor: palette.grid,
+          borderWidth: 1,
+          callbacks: { title: (items) => (items.length ? `Ply ${items[0].label}` : "") },
+        },
+      },
       scales: {
-        x: { title: { display: true, text: "Ply" } },
-        y: { title: { display: true, text: "Estimated rating" } },
+        x: {
+          grid: { color: palette.grid },
+          border: { color: palette.grid },
+          ticks: { color: palette.tick, font: tickFont, maxRotation: 0, autoSkipPadding: 12 },
+        },
+        y: {
+          grid: { color: palette.grid },
+          border: { color: palette.grid },
+          ticks: { color: palette.tick, font: tickFont, maxTicksLimit: 5 },
+        },
       },
     },
-    plugins: [buildSyncPlugin()],
+    plugins: [buildSyncPlugin(palette)],
   });
 }
 
@@ -1095,6 +1247,8 @@ function setupChartPointerNav() {
   });
 }
 
+// --- Board, player bars, clocks -------------------------------------------------
+
 function clearSquareHighlights() {
   document.querySelectorAll(".highlight-from, .highlight-to").forEach((el) => {
     el.classList.remove("highlight-from", "highlight-to");
@@ -1106,10 +1260,18 @@ function highlightMoveSquares(uci) {
   if (!uci || uci.length < 4) return;
   const from = uci.slice(0, 2);
   const to = uci.slice(2, 4);
-  const fromEl = document.querySelector(`.square-${from}`);
-  const toEl = document.querySelector(`.square-${to}`);
+  const fromEl = document.querySelector(`#board .square-${from}`);
+  const toEl = document.querySelector(`#board .square-${to}`);
   if (fromEl) fromEl.classList.add("highlight-from");
   if (toEl) toEl.classList.add("highlight-to");
+}
+
+function highlightCurrentPly() {
+  if (!state.result || state.currentPly === 0) {
+    clearSquareHighlights();
+    return;
+  }
+  highlightMoveSquares(state.result.per_move[state.currentPly - 1].uci);
 }
 
 // Mirrors format_data.parse_time_control: "{base}+{increment}" in seconds,
@@ -1136,6 +1298,14 @@ function formatClock(seconds) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+// Ticking-clock format: m:ss, with tenths under 10 seconds, clamped at 0.
+function formatLiveClock(seconds) {
+  const s = Math.max(0, seconds);
+  if (s >= 10) return formatClock(Math.floor(s));
+  const tenths = Math.floor(s * 10) / 10;
+  return `0:0${tenths.toFixed(1)}`;
+}
+
 // Plies are 1-indexed and alternate White (odd), Black (even). Returns the
 // side's remaining clock as of `ply` moves played, or the TimeControl base
 // allotment before either side has moved, or null if neither is derivable.
@@ -1153,52 +1323,74 @@ function clockSecondsForSide(result, ply, side) {
   return record ? record.clock_seconds : null;
 }
 
+function sideToMoveAtPly(ply) {
+  return ply % 2 === 0 ? "white" : "black";
+}
+
+function barPositionForSide(side) {
+  const orientation = state.board.orientation();
+  const bottomSide = orientation === "white" ? "white" : "black";
+  return side === bottomSide ? "bottom" : "top";
+}
+
+function gameIsOver() {
+  if (!state.result) return false;
+  if (state.live.mode && (state.live.active || state.live.connState !== "idle")) {
+    return state.live.finished;
+  }
+  return !state.result.provisional;
+}
+
 function renderPlayerBars(ply) {
   const result = state.result;
   const headers = result.headers || {};
-  const whiteName = headers.White || "White";
-  const blackName = headers.Black || "Black";
   const whiteCurrent = ply === 0 ? result.white_baseline : result.per_move[ply - 1].white_rating;
   const blackCurrent = ply === 0 ? result.black_baseline : result.per_move[ply - 1].black_rating;
   const synthesizedClock = Boolean(state.sampleMeta && state.sampleMeta.source === "synthetic corpus");
+  const latestPly = state.fenAtPly.length - 1;
+  const toMove = gameIsOver() && ply === latestPly ? null : sideToMoveAtPly(ply);
 
   const perSide = {
     white: {
-      name: whiteName,
-      baseline: result.white_baseline,
+      side: "white",
+      name: headers.White || "White",
       current: whiteCurrent,
       actual: result.white_actual_rating,
       clockSeconds: clockSecondsForSide(result, ply, "white"),
       synthesizedClock,
+      toMove: toMove === "white",
     },
     black: {
-      name: blackName,
-      baseline: result.black_baseline,
+      side: "black",
+      name: headers.Black || "Black",
       current: blackCurrent,
       actual: result.black_actual_rating,
       clockSeconds: clockSecondsForSide(result, ply, "black"),
       synthesizedClock,
+      toMove: toMove === "black",
     },
   };
 
-  const orientation = state.board.orientation();
-  const topSide = orientation === "white" ? "black" : "white";
-  const bottomSide = orientation === "white" ? "white" : "black";
-
-  setPlayerBar("top", perSide[topSide]);
-  setPlayerBar("bottom", perSide[bottomSide]);
+  setPlayerBar(barPositionForSide("white"), perSide.white);
+  setPlayerBar(barPositionForSide("black"), perSide.black);
 }
 
 function setPlayerBar(position, info) {
+  const clockEl = $(`bar-${position}-clock`);
   const clockKnown = typeof info.clockSeconds === "number";
-  $(`bar-${position}-clock`).hidden = !clockKnown;
+  clockEl.hidden = !clockKnown;
   if (clockKnown) {
-    $(`bar-${position}-clock`).textContent = formatClock(info.clockSeconds);
+    clockEl.textContent = formatClock(info.clockSeconds);
+    clockEl.classList.toggle("low", info.clockSeconds < LOW_CLOCK_SECONDS);
   }
+  clockEl.classList.toggle("active", info.toMove);
+  clockEl.title = info.synthesizedClock ? "Synthetic clock (built for the synthetic corpus)" : "";
+  clockEl.dataset.side = info.side;
   $(`bar-${position}-clock-note`).hidden = !(clockKnown && info.synthesizedClock);
 
+  $(`bar-${position}-swatch`).classList.toggle("is-black", info.side === "black");
   $(`bar-${position}-name`).textContent = info.name;
-  $(`bar-${position}-baseline`).textContent = maskedOrRounded(info.baseline);
+  $(`bar-${position}-name`).title = info.name;
   $(`bar-${position}-current`).textContent = Math.round(info.current);
 
   const actualKnown = typeof info.actual === "number";
@@ -1212,28 +1404,33 @@ function setPlayerBar(position, info) {
   }
 }
 
-function formatDelta(delta) {
+function formatDeltaHtml(delta) {
   if (delta === null || delta === undefined || Number.isNaN(delta)) return "";
   const rounded = Math.round(delta);
-  if (rounded === 0) return " (no change)";
+  if (rounded === 0) return `<span class="delta">&plusmn;0</span>`;
   const sign = rounded > 0 ? "+" : "";
-  return ` (${sign}${rounded})`;
+  return `<span class="delta">${sign}${rounded}</span>`;
+}
+
+function baselineText(value, source) {
+  return `${maskedOrRounded(value)}<span class="delta">${escapeHtml(formatSource(source) || "")}</span>`;
 }
 
 function renderMetricsPanel(ply) {
   const container = $("metrics-content");
   const result = state.result;
+  const baselineRow =
+    `<dt>W baseline ${infoIconHtml("baseline")}</dt><dd>${baselineText(result.white_baseline, result.white_baseline_source)}</dd>` +
+    `<dt>B baseline</dt><dd>${baselineText(result.black_baseline, result.black_baseline_source)}</dd>`;
 
   if (ply === 0) {
+    $("metrics-title").textContent = "Start position";
     container.innerHTML = `
-      <p class="metrics-move-label">Start of game</p>
       <dl class="metrics-grid">
-        <dt>White baseline ${infoIconHtml("baseline")}</dt><dd>${maskedOrRounded(result.white_baseline)}</dd>
-        <dt>Black baseline</dt><dd>${maskedOrRounded(result.black_baseline)}</dd>
-        <dt>White actual / error ${infoIconHtml("actualRating")}</dt><dd>${actualAndErrorText(result.white_baseline, result.white_actual_rating)}</dd>
-        <dt>Black actual / error</dt><dd>${actualAndErrorText(result.black_baseline, result.black_actual_rating)}</dd>
+        ${baselineRow}
+        <dt>W actual ${infoIconHtml("actualRating")}</dt><dd>${actualAndErrorHtml(result.white_baseline, result.white_actual_rating)}</dd>
+        <dt>B actual</dt><dd>${actualAndErrorHtml(result.black_baseline, result.black_actual_rating)}</dd>
       </dl>
-      <p class="metrics-hint">Step forward to see per-move rating estimates and attention.</p>
     `;
     return;
   }
@@ -1242,56 +1439,64 @@ function renderMetricsPanel(ply) {
   const prev = ply >= 2 ? result.per_move[ply - 2] : null;
   const whiteDelta = prev ? move.white_rating - prev.white_rating : null;
   const blackDelta = prev ? move.black_rating - prev.black_rating : null;
-  const sideToMove = ply % 2 === 1 ? "White" : "Black";
+  const sideMoved = ply % 2 === 1 ? "White" : "Black";
+  const moveNumber = Math.ceil(ply / 2);
+  $("metrics-title").textContent = `Ply ${ply} · ${moveNumber}${ply % 2 === 1 ? "." : "..."} ${move.move || "?"}`;
 
   const attentionInfo = state.attentionRanks.get(ply);
-  const attentionLine =
+  const attentionText =
     attentionInfo && typeof move.attention_weight === "number"
-      ? `${(move.attention_weight * 100).toFixed(2)}% of total attention ` +
-        `(rank ${attentionInfo.rank} of ${attentionInfo.total}, top ${attentionInfo.percentile}%)`
-      : "not available for this checkpoint";
+      ? `${(move.attention_weight * 100).toFixed(2)}%<span class="delta">#${attentionInfo.rank}/${attentionInfo.total}</span>`
+      : "n/a";
 
   const critical = state.criticalByPly.get(ply) || {};
-  const criticalLines = [];
-  if (critical.white != null) {
-    criticalLines.push(`critical for White (rank ${critical.white} of ${state.criticalCounts.white})`);
-  }
-  if (critical.black != null) {
-    criticalLines.push(`critical for Black (rank ${critical.black} of ${state.criticalCounts.black})`);
-  }
-  const criticalText = criticalLines.length ? criticalLines.join(", ") : "not flagged as critical";
+  const criticalBits = [];
+  if (critical.white != null) criticalBits.push(`W #${critical.white}/${state.criticalCounts.white}`);
+  if (critical.black != null) criticalBits.push(`B #${critical.black}/${state.criticalCounts.black}`);
+  const criticalText = criticalBits.length ? `&#9733; ${criticalBits.join(", ")}` : "no";
 
   const visible = actualRatingsVisible();
   const whiteDeviationText = visible ? move.white_deviation.toFixed(1) : "hidden";
   const blackDeviationText = visible ? move.black_deviation.toFixed(1) : "hidden";
 
-  const clockText = typeof move.clock_seconds === "number" ? formatClock(move.clock_seconds) : "not available";
+  const clockText = typeof move.clock_seconds === "number" ? formatClock(move.clock_seconds) : "n/a";
   const timeSpentText =
-    typeof move.time_spent_seconds === "number" ? formatTimeSpent(move.time_spent_seconds) : "not available";
+    typeof move.time_spent_seconds === "number" ? formatTimeSpent(move.time_spent_seconds) : "n/a";
 
   container.innerHTML = `
-    <p class="metrics-move-label">Ply ${ply} &middot; ${sideToMove} played ${escapeHtml(move.move || "?")}</p>
     <dl class="metrics-grid">
-      <dt>${sideToMove} clock remaining ${infoIconHtml("clockTime")}</dt><dd>${clockText}</dd>
-      <dt>Time spent on this move</dt><dd>${timeSpentText}</dd>
-      <dt>White estimate ${infoIconHtml("ratingEstimate")}</dt><dd>${Math.round(move.white_rating)}${formatDelta(whiteDelta)}</dd>
-      <dt>Black estimate</dt><dd>${Math.round(move.black_rating)}${formatDelta(blackDelta)}</dd>
-      <dt>White actual / error ${infoIconHtml("actualRating")}</dt><dd>${actualAndErrorText(move.white_rating, result.white_actual_rating)}</dd>
-      <dt>Black actual / error</dt><dd>${actualAndErrorText(move.black_rating, result.black_actual_rating)}</dd>
-      <dt>White deviation from baseline ${infoIconHtml("deviation")}</dt><dd>${whiteDeviationText}</dd>
-      <dt>Black deviation from baseline</dt><dd>${blackDeviationText}</dd>
-      <dt>Attention ${infoIconHtml("attention")}</dt><dd>${attentionLine}</dd>
-      <dt>Critical move ${infoIconHtml("criticalMove")}</dt><dd>${criticalText}</dd>
+      <dt>${sideMoved} clock ${infoIconHtml("clockTime")}</dt><dd>${clockText}</dd>
+      <dt>Time spent</dt><dd>${timeSpentText}</dd>
+      <dt>W est ${infoIconHtml("ratingEstimate")}</dt><dd>${Math.round(move.white_rating)}${formatDeltaHtml(whiteDelta)}</dd>
+      <dt>B est</dt><dd>${Math.round(move.black_rating)}${formatDeltaHtml(blackDelta)}</dd>
+      <dt>W deviation ${infoIconHtml("deviation")}</dt><dd>${whiteDeviationText}</dd>
+      <dt>B deviation</dt><dd>${blackDeviationText}</dd>
+      <dt>Attention ${infoIconHtml("attention")}</dt><dd>${attentionText}</dd>
+      <dt>Critical ${infoIconHtml("criticalMove")}</dt><dd>${criticalText}</dd>
     </dl>
   `;
 }
 
-function markActiveMoveListEntry(ply) {
-  document.querySelectorAll(".move-cell.active").forEach((el) => el.classList.remove("active"));
-  const match = document.querySelector(`.move-cell[data-ply="${ply}"]`);
-  if (match) {
-    match.classList.add("active");
-    match.scrollIntoView({ block: "nearest", behavior: "smooth" });
+// Scrolls only the move list (never the window) so the active move is visible.
+function markActiveMoveListEntry(ply, opts = {}) {
+  const list = $("move-list");
+  list.querySelectorAll(".move-cell.active").forEach((el) => el.classList.remove("active"));
+  const match = list.querySelector(`.move-cell[data-ply="${ply}"]`);
+  if (ply === 0 && !opts.keepListScroll) {
+    list.scrollTop = 0;
+  }
+  if (!match) return;
+  match.classList.add("active");
+  if (opts.keepListScroll) return;
+  const listRect = list.getBoundingClientRect();
+  const cellRect = match.getBoundingClientRect();
+  const top = cellRect.top - listRect.top + list.scrollTop;
+  const bottom = top + cellRect.height;
+  const margin = cellRect.height;
+  if (top - margin < list.scrollTop) {
+    list.scrollTop = Math.max(0, top - margin);
+  } else if (bottom + margin > list.scrollTop + list.clientHeight) {
+    list.scrollTop = bottom + margin - list.clientHeight;
   }
 }
 
@@ -1307,7 +1512,7 @@ function buildMoveCell(move, side) {
   }
   if (state.substitutedPlies.has(move.ply)) {
     btn.classList.add("synthetic");
-    btn.title = btn.title ? `${btn.title}; synthetic: engine move inserted` : "Synthetic: engine move inserted";
+    btn.title = btn.title ? `${btn.title}; engine move inserted` : "Engine move inserted";
   }
   const moveText = document.createElement("span");
   moveText.textContent = move.move || "?";
@@ -1333,9 +1538,10 @@ function renderMoveList(perMove) {
   const container = $("move-list");
   container.innerHTML = "";
   if (!perMove.length) {
-    container.innerHTML = '<p class="move-list-empty">No moves to show.</p>';
+    container.innerHTML = '<p class="move-list-empty">No moves yet.</p>';
     return;
   }
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < perMove.length; i += 2) {
     const moveNumber = Math.floor(i / 2) + 1;
     const whiteMove = perMove[i];
@@ -1347,7 +1553,7 @@ function renderMoveList(perMove) {
 
     const numEl = document.createElement("span");
     numEl.className = "move-number";
-    numEl.textContent = `${moveNumber}.`;
+    numEl.textContent = `${moveNumber}`;
     row.appendChild(numEl);
 
     row.appendChild(buildMoveCell(whiteMove, "white"));
@@ -1359,41 +1565,39 @@ function renderMoveList(perMove) {
       row.appendChild(empty);
     }
 
-    container.appendChild(row);
+    fragment.appendChild(row);
   }
+  container.appendChild(fragment);
 }
 
 function updatePlyIndicator() {
-  $("ply-indicator").textContent = `ply ${state.currentPly} / ${state.fenAtPly.length - 1}`;
+  $("ply-indicator").textContent = `${state.currentPly} / ${state.fenAtPly.length - 1}`;
 }
 
 function renderBoardAtPly(ply, opts = {}) {
   if (!opts.fromAutoplay) {
     stopAutoplay();
   }
-  const clamped = Math.max(0, Math.min(ply, state.fenAtPly.length - 1));
-  state.currentPly = clamped;
-  state.board.position(state.fenAtPly[clamped], false);
-  updatePlyIndicator();
+  preservingWindowScroll(() => {
+    const clamped = Math.max(0, Math.min(ply, state.fenAtPly.length - 1));
+    state.currentPly = clamped;
+    state.board.position(state.fenAtPly[clamped], false);
+    updatePlyIndicator();
+    highlightCurrentPly();
 
-  if (clamped === 0) {
-    clearSquareHighlights();
-  } else {
-    const move = state.result.per_move[clamped - 1];
-    highlightMoveSquares(move.uci);
-  }
+    if (state.live.active || state.live.connState !== "idle") {
+      state.live.following = clamped === state.fenAtPly.length - 1;
+    }
 
-  renderPlayerBars(clamped);
-  renderMetricsPanel(clamped);
-  markActiveMoveListEntry(clamped);
-  if (state.chart) {
-    state.chart.update("none");
-  }
-
-  if (state.live.active) {
-    state.live.following = clamped === state.fenAtPly.length - 1;
+    renderPlayerBars(clamped);
+    renderMetricsPanel(clamped);
+    markActiveMoveListEntry(clamped, { keepListScroll: opts.keepListScroll });
+    if (state.chart) {
+      state.chart.update("none");
+    }
     updateLiveButtons();
-  }
+    syncLiveClockTicker();
+  });
 }
 
 function stopAutoplay() {
@@ -1434,7 +1638,9 @@ function toggleAutoplay() {
 
 function flipBoard() {
   state.board.flip();
+  highlightCurrentPly();
   renderPlayerBars(state.currentPly);
+  syncLiveClockTicker();
 }
 
 function setupBoardControls() {
@@ -1477,6 +1683,27 @@ function setupKeyboardNav() {
   });
 }
 
+// "New move" pill: shown when a live move lands while the board is scrolled
+// out of view, instead of ever moving the page for the user.
+function setupBoardVisibilityWatch() {
+  const pill = $("new-move-pill");
+  pill.addEventListener("click", () => {
+    pill.hidden = true;
+    $("board-wrap").scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+  if (!("IntersectionObserver" in window)) return;
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        state.boardInView = entry.isIntersecting && entry.intersectionRatio > 0.35;
+        if (state.boardInView) pill.hidden = true;
+      });
+    },
+    { threshold: [0, 0.35, 0.7] }
+  );
+  observer.observe($("board-wrap"));
+}
+
 // --- Live mode -----------------------------------------------------------
 //
 // Every SSE "update" carries a fresh, non-causal rerun of the whole prefix
@@ -1504,31 +1731,88 @@ function mergeLiveUpdate(result) {
   return { ...result, per_move: frozen };
 }
 
-function setLiveStatusText(text) {
-  const inputLine = $("live-status-line");
-  inputLine.hidden = false;
-  inputLine.textContent = text;
-  $("live-status-text").textContent = text;
-  updateLiveButtons();
+const LIVE_STATE_TEXT = {
+  connecting: "Connecting...",
+  connected: "Live",
+  reconnecting: "Reconnecting...",
+  disconnected: "Disconnected",
+  finished: "Game over",
+  stopped: "Stopped",
+  error: "Stopped",
+};
+
+function liveSessionOnScreen() {
+  return Boolean(state.result && state.live.mode && state.live.connState !== "idle" && !$("live-badge").hidden);
 }
 
-function syncLiveStatusPanelVisibility() {
-  // Content-driven, not just state-driven: an empty panel (e.g. a "finished"
-  // flag left over from a previous live session) must never show above an
-  // unrelated result such as a freshly loaded sample game.
-  const hasContent = $("live-status-text").textContent.trim().length > 0;
-  $("live-status-panel").hidden = !hasContent;
+// Single place that turns the live connection state into UI: status text,
+// the board overlay (reconnecting / disconnected), the game-over badge,
+// dimmed clocks, and the ticking clock.
+function setLiveConnState(connState, detail) {
+  state.live.connState = connState;
+  const base = LIVE_STATE_TEXT[connState] || "";
+  let text = detail ? `${base}: ${detail}` : base;
+  if (connState === "connected") {
+    const bits = ["Live"];
+    if (state.live.mode === "tv" && state.live.gameId) bits.push(`TV ${state.live.gameId}`);
+    if (typeof state.live.lastInferenceMs === "number") bits.push(`last move ${Math.round(state.live.lastInferenceMs)} ms`);
+    if (detail) bits.push(detail);
+    text = bits.join(" · ");
+  }
+  if (connState === "idle") text = "";
+
+  const inputLine = $("live-status-line");
+  inputLine.hidden = !text;
+  inputLine.textContent = text;
+  inputLine.title = text;
+  $("live-status-text").textContent = text;
+  $("live-status-text").title = text;
+  $("live-status-panel").dataset.state = connState;
+
+  const onScreen = liveSessionOnScreen();
+  const offline = onScreen && (connState === "reconnecting" || connState === "disconnected");
+  $("board-wrap").classList.toggle("is-offline", offline);
+  $("board-overlay").hidden = !offline;
+  $("board-overlay-spinner").hidden = connState !== "reconnecting";
+  $("board-overlay-text").textContent = connState === "reconnecting" ? "Reconnecting..." : "Disconnected";
+  $("board-overlay-retry").hidden = connState !== "disconnected";
+  $("board-badge").hidden = !(onScreen && connState === "finished");
+  $("results-panel").classList.toggle("live-offline", onScreen && connState !== "connected");
+
+  if (onScreen && connState === "finished") {
+    // Show the recorded clocks (no side to move) once the game is over.
+    renderPlayerBars(state.currentPly);
+  }
+  updateLiveButtons();
+  syncLiveClockTicker();
+}
+
+function resetLiveSessionUi() {
+  clearLiveReconnectTimer();
+  state.live.finished = false;
+  state.live.mode = null;
+  state.live.clockAnchor = null;
+  setLiveConnState("idle");
 }
 
 function updateLiveButtons() {
-  $("live-stop-button").hidden = !state.live.active;
-  $("live-follow-button").disabled = state.live.active;
-  $("live-tv-button").disabled = state.live.active;
+  const live = state.live;
+  $("live-stop-button").hidden = !live.active;
+  $("live-follow-button").disabled = live.active;
+  $("live-tv-button").disabled = live.active;
 
-  syncLiveStatusPanelVisibility();
-  $("jump-to-live").hidden = !state.live.active || state.live.following;
-  $("show-full-analysis").hidden = !state.live.finished || !state.live.gameId;
-  $("stop-live").hidden = !state.live.active;
+  const panelHasContent = $("live-status-text").textContent.trim().length > 0 && !$("live-badge").hidden;
+  $("live-status-panel").hidden = !panelHasContent;
+  $("jump-to-live").hidden = !live.mode || live.following || !state.result;
+  $("show-full-analysis").hidden = !live.finished || !live.gameId;
+  $("stop-live").hidden = !live.active;
+}
+
+function clearLiveReconnectTimer() {
+  if (state.live.reconnectTimer) {
+    clearTimeout(state.live.reconnectTimer);
+    state.live.reconnectTimer = null;
+  }
 }
 
 function closeLiveEventSourceQuietly() {
@@ -1540,51 +1824,179 @@ function closeLiveEventSourceQuietly() {
   }
 }
 
-function stopLiveStream() {
+function stopLiveStream(opts = {}) {
+  clearLiveReconnectTimer();
   if (!state.live.active && !state.live.eventSource) return;
   closeLiveEventSourceQuietly();
   state.live.active = false;
-  updateLiveButtons();
+  if (!opts.silent) {
+    setLiveConnState("stopped");
+  } else {
+    updateLiveButtons();
+    syncLiveClockTicker();
+  }
 }
+
+// --- Live ticking clock ---------------------------------------------------------
+
+// Records "the side to move had `seconds` left at time `at`" from the latest
+// server update, so the clock can count down locally between updates.
+function setLiveClockAnchor(result) {
+  const perMove = state.live.frozenPerMove;
+  const latestPly = perMove.length;
+  const side = sideToMoveAtPly(latestPly);
+  const seconds = clockSecondsForSide({ ...result, per_move: perMove }, latestPly, side);
+  if (typeof seconds !== "number") {
+    state.live.clockAnchor = null;
+    return;
+  }
+  // The update was sent after inference finished, so the clock has already
+  // been running for about that long.
+  const inferenceMs = typeof result.inference_ms === "number" ? result.inference_ms : 0;
+  state.live.clockAnchor = { ply: latestPly, side, seconds, at: performance.now() - inferenceMs };
+}
+
+function liveClockShouldTick() {
+  const live = state.live;
+  return Boolean(
+    live.active &&
+      live.connState === "connected" &&
+      !live.finished &&
+      live.clockAnchor &&
+      state.result &&
+      !$("live-badge").hidden &&
+      state.currentPly === live.clockAnchor.ply &&
+      state.currentPly === state.fenAtPly.length - 1 &&
+      !document.hidden
+  );
+}
+
+function tickLiveClock() {
+  if (!liveClockShouldTick()) {
+    syncLiveClockTicker();
+    return;
+  }
+  const anchor = state.live.clockAnchor;
+  const remaining = Math.max(0, anchor.seconds - (performance.now() - anchor.at) / 1000);
+  const clockEl = $(`bar-${barPositionForSide(anchor.side)}-clock`);
+  clockEl.hidden = false;
+  clockEl.textContent = formatLiveClock(remaining);
+  clockEl.classList.toggle("low", remaining < LOW_CLOCK_SECONDS);
+  clockEl.classList.add("active");
+}
+
+function syncLiveClockTicker() {
+  const shouldTick = liveClockShouldTick();
+  if (shouldTick && !state.live.clockTimer) {
+    state.live.clockTimer = setInterval(tickLiveClock, LIVE_CLOCK_TICK_MS);
+    tickLiveClock();
+  } else if (!shouldTick && state.live.clockTimer) {
+    clearInterval(state.live.clockTimer);
+    state.live.clockTimer = null;
+  }
+}
+
+function setupLiveClockVisibility() {
+  document.addEventListener("visibilitychange", () => {
+    // Hidden: freeze. Visible again: the anchor still holds the server value
+    // and its timestamp, so the first tick resyncs to the right estimate.
+    syncLiveClockTicker();
+  });
+}
+
+// --- Live stream handling ------------------------------------------------------------
 
 function handleLiveMessage(payload) {
   if (payload.type === "status") {
-    setLiveStatusText(payload.message || payload.state);
-    if (payload.state === "finished") {
-      state.live.finished = true;
-      closeLiveEventSourceQuietly();
-      state.live.active = false;
-      updateLiveButtons();
+    switch (payload.state) {
+      case "finished":
+        state.live.finished = true;
+        closeLiveEventSourceQuietly();
+        state.live.active = false;
+        setLiveConnState("finished");
+        break;
+      case "reconnecting":
+        setLiveConnState("reconnecting");
+        break;
+      case "connecting":
+        if (state.live.connState !== "reconnecting") setLiveConnState("connecting");
+        break;
+      case "connected":
+        setLiveConnState("connected");
+        break;
+      case "capped":
+        setLiveConnState("connected", "ply cap reached");
+        break;
+      case "unsupported":
+        // Lichess TV featured a custom-position or variant game; the stream
+        // stays open and waits for TV to switch.
+        showError(payload.message || "This TV game cannot be analyzed.");
+        setLiveConnState("connecting", "unsupported TV game, waiting for the next one");
+        break;
+      default:
+        if (payload.message) setLiveConnState(state.live.connState, payload.state);
+        break;
     }
     return;
   }
 
   if (payload.type === "error") {
-    setLiveStatusText(`Error: ${payload.detail}`);
+    // Permanent: show the reason and do not reconnect.
+    const detail = payload.detail || payload.message || "Live analysis stopped.";
     closeLiveEventSourceQuietly();
+    clearLiveReconnectTimer();
     state.live.active = false;
-    updateLiveButtons();
+    showError(detail);
+    setLiveConnState("error", "see message above");
     return;
   }
 
   if (payload.type === "update") {
     const result = payload.result;
-    if (state.live.gameId && result.lichess_game_id && result.lichess_game_id !== state.live.gameId) {
+    const isNewGame = Boolean(
+      state.live.gameId && result.lichess_game_id && result.lichess_game_id !== state.live.gameId
+    );
+    if (isNewGame) {
       // Lichess TV switched to a new game: start a fresh frozen history.
       state.live.frozenPerMove = [];
       state.live.following = true;
     }
     state.live.gameId = result.lichess_game_id || state.live.gameId;
+    state.live.reconnectAttempts = 0;
+    state.live.lastInferenceMs = typeof result.inference_ms === "number" ? result.inference_ms : null;
+    if (state.live.mode === "tv") clearError();
 
+    const previousLength = state.live.frozenPerMove.length;
     const merged = mergeLiveUpdate(result);
-    const wasFollowing = state.live.following;
+    const wasFollowing = state.live.following || !state.result || $("live-badge").hidden;
     const previousPly = state.currentPly;
+    setLiveClockAnchor(result);
+    state.live.following = wasFollowing;
     renderResult(merged, { live: true });
     if (!wasFollowing) {
-      renderBoardAtPly(Math.min(previousPly, state.fenAtPly.length - 1));
+      renderBoardAtPly(Math.min(previousPly, state.fenAtPly.length - 1), { keepListScroll: true });
     }
-    const timingNote = typeof result.inference_ms === "number" ? ` Last move scored in ${Math.round(result.inference_ms)} ms.` : "";
-    setLiveStatusText(`Connected.${timingNote}`);
+    setLiveConnState("connected");
+    if (merged.per_move.length > previousLength && !state.boardInView) {
+      $("new-move-pill").hidden = false;
+    }
+  }
+}
+
+function scheduleLiveReconnect() {
+  const live = state.live;
+  if (live.reconnectAttempts < LIVE_RECONNECT_DELAYS_MS.length) {
+    const delay = LIVE_RECONNECT_DELAYS_MS[live.reconnectAttempts];
+    live.reconnectAttempts += 1;
+    setLiveConnState("reconnecting");
+    clearLiveReconnectTimer();
+    live.reconnectTimer = setTimeout(() => {
+      live.reconnectTimer = null;
+      if (live.active) connectLiveEventSource();
+    }, delay);
+  } else {
+    live.active = false;
+    setLiveConnState("disconnected");
   }
 }
 
@@ -1596,33 +2008,28 @@ function connectLiveEventSource() {
       ? `${API_BASE}/live/stream/${encodeURIComponent(state.live.gameId)}?top_k=${topK}&min_ply=${minPly}`
       : `${API_BASE}/live/tv?top_k=${topK}&min_ply=${minPly}`;
 
-  setLiveStatusText("Connecting...");
+  if (state.live.connState !== "reconnecting") setLiveConnState("connecting");
+  closeLiveEventSourceQuietly();
   const source = new EventSource(url);
   state.live.eventSource = source;
   source.onmessage = (evt) => {
+    let payload;
     try {
-      handleLiveMessage(JSON.parse(evt.data));
+      payload = JSON.parse(evt.data);
     } catch (err) {
-      // Malformed event; ignore this one and keep the stream open.
+      return; // Malformed event; ignore this one and keep the stream open.
     }
+    handleLiveMessage(payload);
   };
   source.onerror = () => {
-    if (!state.live.active) return;
-    source.close();
-    if (state.live.reconnectAttempts < 1) {
-      state.live.reconnectAttempts += 1;
-      setLiveStatusText("Connection lost; reconnecting...");
-      connectLiveEventSource();
-    } else {
-      setLiveStatusText("Connection lost and could not reconnect. Stop and try again.");
-      state.live.active = false;
-      updateLiveButtons();
-    }
+    if (!state.live.active || state.live.eventSource !== source) return;
+    closeLiveEventSourceQuietly();
+    scheduleLiveReconnect();
   };
 }
 
 function startLiveWatch(mode, gameId) {
-  stopLiveStream();
+  stopLiveStream({ silent: true });
   state.live.active = true;
   state.live.mode = mode;
   state.live.gameId = gameId || null;
@@ -1630,8 +2037,34 @@ function startLiveWatch(mode, gameId) {
   state.live.finished = false;
   state.live.frozenPerMove = [];
   state.live.reconnectAttempts = 0;
+  state.live.clockAnchor = null;
+  state.live.lastInferenceMs = null;
   updateLiveButtons();
   connectLiveEventSource();
+}
+
+// Retry after retries ran out (or after the browser came back online): keeps
+// the frozen history, since the server replays the prefix on reconnect.
+function retryLiveWatch() {
+  if (!state.live.mode || state.live.finished) return;
+  clearLiveReconnectTimer();
+  state.live.active = true;
+  state.live.reconnectAttempts = 0;
+  setLiveConnState("reconnecting");
+  connectLiveEventSource();
+}
+
+// Treat the browser going offline as a dropped connection right away, rather
+// than waiting for the socket to time out.
+function setupLiveNetworkEvents() {
+  window.addEventListener("offline", () => {
+    if (!state.live.active) return;
+    closeLiveEventSourceQuietly();
+    scheduleLiveReconnect();
+  });
+  window.addEventListener("online", () => {
+    if (state.live.connState === "disconnected") retryLiveWatch();
+  });
 }
 
 async function loadFullGameAnalysisForLiveGame() {
@@ -1639,7 +2072,7 @@ async function loadFullGameAnalysisForLiveGame() {
   clearError();
   const topK = currentTopK();
   const minPly = currentMinPly();
-  setLiveStatusText("Loading full-game analysis...");
+  $("live-status-text").textContent = "Loading full analysis...";
   try {
     const response = await fetch(`${API_BASE}/predict/lichess?top_k=${topK}&min_ply=${minPly}`, {
       method: "POST",
@@ -1650,9 +2083,7 @@ async function loadFullGameAnalysisForLiveGame() {
       throw new Error(await parseErrorDetail(response));
     }
     const result = await response.json();
-    state.live.finished = false;
     closeLiveEventSourceQuietly();
-    $("live-status-panel").hidden = true;
     renderResult(result);
   } catch (err) {
     showError(err.message || String(err));
@@ -1673,20 +2104,25 @@ function setupLiveControls() {
     clearError();
     startLiveWatch("tv", null);
   });
-  $("live-stop-button").addEventListener("click", stopLiveStream);
-  $("stop-live").addEventListener("click", stopLiveStream);
+  $("live-stop-button").addEventListener("click", () => stopLiveStream());
+  $("stop-live").addEventListener("click", () => stopLiveStream());
   $("jump-to-live").addEventListener("click", () => renderBoardAtPly(state.fenAtPly.length - 1));
   $("show-full-analysis").addEventListener("click", loadFullGameAnalysisForLiveGame);
+  $("board-overlay-retry").addEventListener("click", retryLiveWatch);
 }
 
 function init() {
+  setupThemeToggle();
   setupTabs();
   setupInputPanelToggle();
   setupBoard();
   setupBoardControls();
   setupChartPointerNav();
   setupKeyboardNav();
+  setupBoardVisibilityWatch();
   setupLiveControls();
+  setupLiveClockVisibility();
+  setupLiveNetworkEvents();
   setupActualRatingToggle();
   setupInfoPopovers();
   renderMetricsGlossary();
