@@ -26,7 +26,7 @@ class BaselineResolution:
     warning: str | None
 
 
-def _parse_header_rating(header_value: str | None) -> float | None:
+def parse_header_rating(header_value: str | None) -> float | None:
     """Parse a PGN Elo header value, e.g. '1500'. Returns None if missing or non-numeric.
 
     Lichess exports use '?' for unrated/unknown ratings; that and any other
@@ -41,6 +41,17 @@ def _parse_header_rating(header_value: str | None) -> float | None:
     if parsed <= 0:
         return None
     return parsed
+
+
+def resolve_actual_rating(header_value: str | None) -> float | None:
+    """Resolve a side's true rating from the PGN header alone.
+
+    Unlike ``resolve_baseline``, this never considers a request override or a
+    self-prediction fallback: the actual rating is a fixed ground-truth fact
+    about the game (or unknown), while the baseline can be a reviewer's
+    supplied guess used only for suspicion scoring.
+    """
+    return parse_header_rating(header_value)
 
 
 def resolve_baseline(
@@ -60,7 +71,7 @@ def resolve_baseline(
     if requested is not None:
         return BaselineResolution(value=float(requested), source=BASELINE_SOURCE_REQUEST, warning=None)
 
-    header_rating = _parse_header_rating(header_value)
+    header_rating = parse_header_rating(header_value)
     if header_rating is not None:
         return BaselineResolution(value=header_rating, source=BASELINE_SOURCE_PGN_HEADER, warning=None)
 

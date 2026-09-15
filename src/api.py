@@ -44,7 +44,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from baseline import resolve_baseline
+from baseline import resolve_actual_rating, resolve_baseline
 from chess_rating_net import ChessEloPredictor
 from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
 from format_data import board_to_array, parse_game, time_to_seconds
@@ -299,6 +299,12 @@ def _run_inference(
     )
     baseline = torch.tensor([[white_resolution.value, black_resolution.value]], dtype=torch.float)
 
+    # Independent of the baseline (which a caller can override): the actual
+    # rating is read only from the PGN header, or null if the source game
+    # did not record one.
+    white_actual_rating = resolve_actual_rating(headers.get("WhiteElo"))
+    black_actual_rating = resolve_actual_rating(headers.get("BlackElo"))
+
     warnings: list[str] = [w for w in (white_resolution.warning, black_resolution.warning) if w]
 
     # Anomaly scoring is only available when the served checkpoint has an anomaly
@@ -359,6 +365,8 @@ def _run_inference(
         "black_baseline": round(black_resolution.value, 2),
         "white_baseline_source": white_resolution.source,
         "black_baseline_source": black_resolution.source,
+        "white_actual_rating": round(white_actual_rating, 2) if white_actual_rating is not None else None,
+        "black_actual_rating": round(black_actual_rating, 2) if black_actual_rating is not None else None,
         "warnings": warnings,
         "white_final_rating": round(per_move_preds_orig[-1, 0].item(), 2),
         "black_final_rating": round(per_move_preds_orig[-1, 1].item(), 2),
