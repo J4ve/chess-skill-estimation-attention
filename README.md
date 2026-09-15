@@ -6,33 +6,28 @@ BS Computer Science thesis (Camarines Sur Polytechnic Colleges). This fork exten
 
 This thesis develops a deep-learning system that estimates a chess player's skill move-by-move in real time from board states and clock times, and simultaneously flags moves that deviate suspiciously from the player's established level as possible engine assistance. The system extends the CNN-BiLSTM rating-estimation baseline of Omori and Tadepalli with a deeper convolutional network, an attention mechanism, and a move-level anomaly-detection module, and packages the result as a real-time web prototype for human fair-play review.
 
-**Based on the baseline paper:** *Chess Rating Estimation from Moves and Clock Times Using a CNN-LSTM* — Michael Omori, Prasad Tadepalli (Oregon State University). https://arxiv.org/abs/2409.11506
+**Based on the baseline paper:** *Chess Rating Estimation from Moves and Clock Times Using a CNN-LSTM* by Michael Omori and Prasad Tadepalli (Oregon State University). https://arxiv.org/abs/2409.11506
 
-## Current build (2026-08-14)
+## Current build (2026-09-15)
 
-- **Parametrized trainer** (`src/chess_rating_net.py`) — argparse + YAML config
-  (`--data_dir --experiment --train --epochs --lr --batch_size --model_dir
-  --resume`, `train=False` by default), periodic checkpointing, resume.
-- **Attention module** (`src/attention.py`) — full query-key additive
-  (Bahdanau) attention with a causal-cumulative forward path (ply *t* attends
-  only to plies 1..*t*), wired into the rating head; per-move output preserved,
-  no lookahead.
-- **Anomaly-detection module** (`src/anomaly.py`) — attention-weighted per-move
-  deviation, with a defined `R_baseline` and an Elo-scale unit guard.
-- **Dense supervision** (`--dense_supervision`) — optional all-ply supervision.
-- **FastAPI service** (`src/api.py`) — serves per-move ratings, attention
-  weights, and Elo-scale deviations.
+This is Objective 3 of the thesis: a real-time, web-based prototype that
+surfaces per-move ratings, suspicion scores, and critical moves to a human
+fair-play reviewer, taking a PGN upload or a Lichess game identifier as
+input.
 
-### Status
-
-Done:
-- Baseline reproduced from scratch (train MAE ~181 ≈ the paper's 182).
-
-In progress / pending:
-- [ ] Attention vs baseline ablation on the 170k-game subset (training on the
-      school HPC; results pending).
-- [ ] Full 1.2M-game corpus run.
-- [ ] Anomaly-validation corpus (bot-vs-bot + real-world closed accounts).
+- **Model** (`src/chess_rating_net.py`, `src/attention.py`, `src/anomaly.py`):
+  a CNN-BiLSTM rating estimator with causal-cumulative Bahdanau attention and
+  an attention-weighted anomaly-detection branch. The API serves the frozen
+  thesis checkpoint by default: the tuned-attention arm, test MAE 171.92 (see
+  "Frozen weights" below).
+- **FastAPI service** (`src/api.py`): PGN text, PGN upload, and Lichess
+  game-ID endpoints; per-side baseline resolution with a reported source;
+  a ranked `critical_moves` list for fast reviewer triage; clean 4xx errors
+  instead of a bare 500 for bad input.
+- **Web prototype** (`src/static/`): a no-build-step HTML/CSS/JS page served
+  by the same FastAPI app, covering both required input modes (PGN and
+  Lichess ID) with a step-through board, a per-move rating chart, suspicion
+  score bars, and a clickable critical-moves list. See "Web prototype" below.
 
 Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_thesis).
 
@@ -51,24 +46,30 @@ the tuned attention arm (test MAE 171.92). It is **not committed** to git (see
   - Expected location: `models/model_55.pth`
   - Download: [Google Drive folder](https://drive.google.com/drive/folders/164qXisHsNAKSM6R7ZMeTeJjPpnZ7s5Rt)
 
-## Quick start (inference API)
+## Quick start (web prototype, local machine)
 
-PyTorch needs Python 3.12 or 3.13. From the repository root:
+PyTorch needs Python 3.12 or 3.13. A venv outside the repo keeps its
+interpreter symlinks clear of any repo sync tooling.
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
+python3.12 -m venv ~/venvs/ratingnet-web
+source ~/venvs/ratingnet-web/bin/activate
+
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 
-# Copy the frozen thesis checkpoint into place
-mkdir -p models/preflight_check_2m
-cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
+# Point at the frozen thesis checkpoint (read-only, never copied into the repo)
+export RATINGNET_CHECKPOINT=/path/to/best_model.pth
+# Or copy it into place instead of setting the env var:
+#   mkdir -p models/preflight_check_2m
+#   cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
 
-# Start the FastAPI service
 python src/api.py
 ```
 
-The service binds to `http://0.0.0.0:8000` by default. Set `PORT` to override.
+The service binds to `http://0.0.0.0:8000` by default (set `PORT` to
+override). Open **http://localhost:8000/** in a browser for the web
+prototype, or use the API directly:
 
 ```bash
 curl http://localhost:8000/health
@@ -78,7 +79,123 @@ curl -X POST http://localhost:8000/predict/pgn \
   -d '{"pgn": "[Event \"Demo\"]\n[WhiteElo \"1500\"]\n[BlackElo \"1500\"]\n[TimeControl \"300+0\"]\n\n1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} *"}'
 
 curl -X POST http://localhost:8000/predict/upload -F "file=@game.pgn"
+
+curl -X POST http://localhost:8000/predict/lichess \
+  -H "Content-Type: application/json" \
+  -d '{"game_id": "abcd1234"}'
 ```
+
+## Web prototype
+
+`src/static/` is a static, no-build-step page (plain HTML/CSS/JS) served by
+FastAPI's `StaticFiles` at `/static`, with `GET /` returning `index.html`
+directly. It covers the two input modes committed for this stage of the
+thesis (PGN upload/paste and a Lichess game identifier); move-by-move live
+streaming of an ongoing game is a later step, not implemented here (see
+"Limitations").
+
+The page has three input tabs (paste PGN, upload a `.pgn` file, or enter a
+Lichess game ID/URL), optional per-side baseline overrides, and shows:
+player names and final rating estimates, a suspicion score bar per side (with
+a caption that it is a review aid, not a verdict), the resolved baseline
+source and any warnings, a per-move rating chart with each side's baseline as
+a dashed reference line, a chessboard you can step through move by move with
+the active move highlighted, and a clickable critical-moves list that jumps
+the board to that ply. A "provisional" badge appears for games with no
+result yet.
+
+### Vendored libraries
+
+No CDN is used, so the page works offline at the defense. Each library is
+vendored under `src/static/vendor/` with its own license file:
+
+| Library | Version | Source | License |
+| --- | --- | --- | --- |
+| jQuery | 3.7.1 | https://www.npmjs.com/package/jquery | MIT |
+| chessboard.js | 1.0.0 | https://github.com/oakmac/chessboardjs (npm: `@chrisoakman/chessboardjs`) | MIT |
+| chessboard.js piece images | v1.0.0 tag | https://github.com/oakmac/chessboardjs/tree/v1.0.0/website/img/chesspieces/wikipedia | MIT |
+| chess.js | 0.13.4 | https://www.npmjs.com/package/chess.js | BSD-2-Clause |
+| Chart.js | 4.4.4 | https://www.npmjs.com/package/chart.js | MIT |
+
+chess.js 0.13.4 is the last version published as a plain ES module with no
+bundler required (later versions still ship as ESM; this version was picked
+because it is a small, stable release with no build step needed beyond a
+native `<script type="module">` import). chessboard.js needs jQuery as a peer
+dependency; both load as classic scripts before `app.js`, which imports
+chess.js as a native ES module.
+
+## API reference
+
+`GET /api` returns this list as JSON at runtime.
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /health` | Model load status, device, and checkpoint path. |
+| `GET /` | The web prototype (`src/static/index.html`). |
+| `GET /api` | Machine-readable endpoint list. |
+| `POST /predict/pgn` | Body `{pgn, white_baseline?, black_baseline?}`. Query `top_k` (default 5). |
+| `POST /predict/upload` | Multipart form: `file` (`.pgn`), `white_baseline?`, `black_baseline?`. Query `top_k`. |
+| `POST /predict/lichess` | Body `{game_id, white_baseline?, black_baseline?}`, where `game_id` is a bare 8-character Lichess ID or a full game URL. Query `top_k`. |
+
+All three `predict/*` endpoints return the same shape:
+
+- `headers`: the PGN headers (`White`, `Black`, `WhiteElo`, `Result`, ...).
+- `white_baseline`, `black_baseline`: the resolved per-side baseline rating.
+- `white_baseline_source`, `black_baseline_source`: one of `request` (caller
+  supplied it), `pgn_header` (parsed from `WhiteElo`/`BlackElo`), or
+  `self_prediction_fallback` (no usable baseline anywhere, so the model's own
+  final-ply prediction was used instead; see "Limitations").
+- `warnings`: readable strings for anything that degrades the result (a
+  fallback baseline, or an anomaly branch that is not available).
+- `white_final_rating`, `black_final_rating`: the model's final-ply rating
+  estimate per side.
+- `white_suspicion_score`, `black_suspicion_score`, `combined_suspicion_score`:
+  attention-weighted deviation from baseline, summed over the game.
+- `per_move`: one record per ply (`ply`, `move` as SAN, `uci`, `white_rating`,
+  `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`).
+- `critical_moves`: up to `top_k` entries per side, ranked by
+  `attention_weight * |deviation|` for that side (`ply`, `move`, `side`,
+  `attention_weight`, `deviation`, `weighted_score`). Empty (with a warning)
+  when the served checkpoint has no attention/anomaly branch.
+- `ongoing`, `provisional`: `true` when the game has no final result yet
+  (PGN `Result` header is `*`).
+
+Bad input (a PGN with no `[%clk ...]` annotations, unparseable PGN text, or a
+malformed Lichess ID) returns HTTP 422 with a readable `detail`, never a bare
+500. A Lichess game that does not exist returns 404; hitting Lichess's rate
+limit returns 429.
+
+## Used as a submodule
+
+This repository is the `prototype/` submodule of
+[J4ve/cs_thesis](https://github.com/J4ve/cs_thesis), the manuscript and
+experiment-plan repository. Code changes land here first; the thesis repo
+then bumps its submodule pointer to pick them up. Do not edit thesis-repo
+files from within this repository's history.
+
+## Limitations
+
+- **Suspicion score is a supplementary flag, not a verdict.** It is meant to
+  help a human fair-play reviewer decide where to look, not to accuse a
+  player automatically. See Barnes and Hernandez-Castro (2015) on the
+  false-positive risk of single-game move analysis.
+- **Mid-game values are provisional.** For an ongoing game (`Result` header
+  `*`), Lichess itself delays the export by a few moves, and any suspicion
+  score computed before the game ends should be read as provisional: it can
+  shift once more moves are known.
+- **Every move re-runs the full bidirectional model over the whole prefix.**
+  The model's BiLSTM has a backward pass that needs a completed sequence;
+  there is no incremental/streaming inference here; scoring ply *t* means
+  running the model over plies 1..*t* from scratch. This is fine for the
+  batch PGN/Lichess-ID flows in this prototype, but is why true move-by-move
+  live streaming of an ongoing game is out of scope for this stage (see
+  "Web prototype").
+- **Self-prediction fallback baselines are close to meaningless.** If neither
+  the caller nor the PGN headers supply a baseline rating, the suspicion
+  score compares the model's own final-ply prediction against itself. The
+  API always reports which baseline source was used
+  (`white_baseline_source`/`black_baseline_source`) so this is visible, not
+  silent.
 
 ## Training path (optional)
 
