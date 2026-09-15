@@ -7,6 +7,7 @@ stream_game/stream_tv orchestration, all without any real network access
 import asyncio
 import json
 
+import chess
 import httpx
 import pytest
 
@@ -32,6 +33,15 @@ FIXTURE_PGN = (
 )
 
 FINISHED_PGN = FIXTURE_PGN.replace('[Result "*"]', '[Result "1-0"]').replace(" *", " 1-0")
+FIXTURE_UCIS = ("e2e4", "e7e5", "g1f3", "b8c6")
+
+
+def _fen_after(*ucis):
+    """A real Lichess-style TV feed FEN for the position after these moves."""
+    board = chess.Board()
+    for uci in ucis:
+        board.push_uci(uci)
+    return board.fen()
 
 
 def run(coro):
@@ -369,7 +379,7 @@ def test_stream_tv_skips_unsupported_game_and_waits_for_next_featured():
         {"t": "featured", "d": {"id": "bad00001", "players": [], "fen": "x"}},
         {"t": "fen", "d": {"fen": "y", "lm": "e4d5", "wc": 55, "bc": 57}},  # illegal: e4 is empty at game start
         {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
-        {"t": "fen", "d": {"fen": "y", "lm": "c7c5", "wc": 55, "bc": 57}},
+        {"t": "fen", "d": {"fen": _fen_after("e2e4"), "lm": "e2e4", "wc": 55, "bc": 57}},
     ]
 
     def handler(request):
@@ -435,7 +445,7 @@ def test_stream_tv_seeds_from_export_and_follows_moves():
     # (that path is covered by the stream_game reconnect test instead).
     tv_feed = [
         {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
-        {"t": "fen", "d": {"fen": "y", "lm": "c7c5", "wc": 55, "bc": 57}},
+        {"t": "fen", "d": {"fen": _fen_after(*FIXTURE_UCIS, "f1c4"), "lm": "f1c4", "wc": 55, "bc": 57}},
     ]
     call_count = {"n": 0}
 
@@ -523,3 +533,61 @@ def test_live_stream_endpoint_sends_custom_position_error_as_sse_event(monkeypat
     assert len(payloads) == 1
     assert payloads[0]["type"] == "error"
     assert "custom position or variant" in payloads[0]["detail"]
+
+
+def test_stream_tv_ignores_repeated_featured_event_for_same_game():
+    tv_feed = [
+        {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
+        {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
+        {"t": "fen", "d": {"fen": _fen_after(*FIXTURE_UCIS, "f1c4"), "lm": "f1c4", "wc": 55, "bc": 57}},
+    ]
+    call_count = {"n": 0}
+
+    def handler(request):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return httpx.Response(200, text=_ndjson(*tv_feed))
+        return httpx.Response(404)
+
+    async def fake_fetch_export(game_id):
+        return FIXTURE_PGN
+
+    async def body_coro():
+        async with _mock_client(handler) as client:
+            return [chunk async for chunk in stream_tv(fake_fetch_export, _fake_run_inference, 5, 10, 100, client=client)]
+
+    payloads = [json.loads(e[len("data: ") :].strip()) for e in run(body_coro())]
+    connected = [p for p in payloads if p.get("state") == "connected"]
+    assert len(connected) == 1
+    # one update for the seeded prefix, one for the live move; none for the repeat
+    assert len([p for p in payloads if p["type"] == "update"]) == 2
+
+
+def test_stream_tv_resyncs_from_export_when_seed_lags_the_feed():
+    lagging_pgn = FIXTURE_PGN  # 4 plies
+    caught_up_pgn = FIXTURE_PGN.replace(" *", " 3. Bc4 {[%clk 0:04:55]} *")  # 5 plies
+    tv_feed = [
+        {"t": "featured", "d": {"id": "wxyz9876", "players": [{"color": "white"}, {"color": "black"}], "fen": "x"}},
+        # Ply 5 was already played when TV featured the game, but the export only had 4 plies,
+        # so the first live move (ply 6) does not fit the seeded board.
+        {"t": "fen", "d": {"fen": _fen_after(*FIXTURE_UCIS, "f1c4", "g8f6"), "lm": "g8f6", "wc": 295, "bc": 290}},
+    ]
+    exports = [lagging_pgn, caught_up_pgn.replace(" *", " Nf6 {[%clk 0:04:50]} *")]
+    call_count = {"n": 0}
+
+    def handler(request):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return httpx.Response(200, text=_ndjson(*tv_feed))
+        return httpx.Response(404)
+
+    async def fake_fetch_export(game_id):
+        return exports.pop(0) if len(exports) > 1 else exports[0]
+
+    async def body_coro():
+        async with _mock_client(handler) as client:
+            return [chunk async for chunk in stream_tv(fake_fetch_export, _fake_run_inference, 5, 10, 100, client=client)]
+
+    payloads = [json.loads(e[len("data: ") :].strip()) for e in run(body_coro())]
+    assert not any("Lost sync" in (p.get("message") or "") for p in payloads)
+    assert len([p for p in payloads if p["type"] == "update"]) == 2

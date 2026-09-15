@@ -116,6 +116,10 @@ class LiveGamePrefix:
     def ply_count(self) -> int:
         return len(self._sans)
 
+    def board_placement(self) -> str:
+        """Piece-placement field of the current position's FEN."""
+        return self._board.board_fen()
+
     def seed_from_pgn(self, pgn_text: str) -> None:
         """Seed the prefix from the already-played portion of the game (export PGN)."""
         game = chess.pgn.read_game(io.StringIO(pgn_text))
@@ -365,6 +369,7 @@ async def stream_tv(
 
     prefix: LiveGamePrefix | None = None
     current_game_id: str | None = None
+    unsupported_game_id: str | None = None
     attempts = 0
     owns_client = client is None
     if owns_client:
@@ -381,6 +386,10 @@ async def stream_tv(
                         new_game_id = data.get("id")
                         if not new_game_id:
                             continue
+                        if new_game_id == current_game_id and (prefix is not None or new_game_id == unsupported_game_id):
+                            # Lichess re-sends "featured" for the game already being followed;
+                            # re-seeding would replay an update with no new move.
+                            continue
                         current_game_id = new_game_id
                         prefix = LiveGamePrefix(headers_from_tv_players(data.get("players", [])), max_plies=max_plies)
                         try:
@@ -391,6 +400,7 @@ async def stream_tv(
                                 # A custom-position or variant game on TV: nothing to score,
                                 # so say why and wait for the next "featured" switch.
                                 prefix = None
+                                unsupported_game_id = current_game_id
                                 yield sse_event(
                                     {
                                         "type": "status",
@@ -422,25 +432,46 @@ async def stream_tv(
                     elif msg_type == "fen":
                         if prefix is None or "lm" not in data:
                             continue
+                        feed_placement = (data.get("fen") or "").split(" ")[0]
+                        if feed_placement and prefix.board_placement() == feed_placement:
+                            continue  # the export seed already included this move
                         seen_ply_events += 1
                         if seen_ply_events <= prefix.ply_count:
                             continue
                         clock = clock_seconds_for_ply(seen_ply_events, data.get("wc", 0), data.get("bc", 0))
                         try:
                             added = prefix.add_move(data["lm"], clock)
+                            in_sync = not (added and feed_placement) or prefix.board_placement() == feed_placement
                         except Exception:
-                            # The live move didn't match our tracked board (an unsupported
-                            # variant, or the feed skipped ahead); drop this game and wait
-                            # for the next TV switch rather than crashing the stream.
-                            prefix = None
-                            yield sse_event(
-                                {
-                                    "type": "status",
-                                    "state": "connecting",
-                                    "message": f"Lost sync with game {current_game_id}; waiting for TV to switch...",
-                                }
-                            )
-                            continue
+                            added, in_sync = False, False
+                        if not in_sync:
+                            # The export PGN used to seed this game can lag the TV feed by a
+                            # move or two, so the live move does not fit our board. Re-seed
+                            # from a fresh export once and accept it if it reaches the feed's
+                            # position; otherwise (an unsupported variant, or the feed skipped
+                            # ahead) drop this game and wait for the next TV switch.
+                            resynced = None
+                            if feed_placement:
+                                try:
+                                    fresh = LiveGamePrefix(prefix.headers, max_plies=max_plies)
+                                    fresh.seed_from_pgn(await fetch_export_pgn_fn(current_game_id))
+                                    if fresh.board_placement() == feed_placement:
+                                        resynced = fresh
+                                except Exception:
+                                    resynced = None
+                            if resynced is None:
+                                prefix = None
+                                yield sse_event(
+                                    {
+                                        "type": "status",
+                                        "state": "connecting",
+                                        "message": f"Lost sync with game {current_game_id}; waiting for TV to switch...",
+                                    }
+                                )
+                                continue
+                            prefix = resynced
+                            seen_ply_events = prefix.ply_count
+                            added = True
                         if added:
                             event = build_update_event(
                                 prefix, run_inference_fn, top_k, min_ply, None, None, current_game_id
