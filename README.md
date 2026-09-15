@@ -95,17 +95,31 @@ curl -X POST http://localhost:8000/predict/lichess \
 FastAPI's `StaticFiles` at `/static`, with `GET /` returning `index.html`
 directly.
 
-The page has five input tabs: paste PGN, upload a `.pgn` file, enter a
-Lichess game ID/URL, pick a **sample game** (see "Sample games" below), or
-watch a game **live** (see "Live mode" below); plus optional per-side
-baseline, critical-move top-k, and min-ply overrides shared across tabs.
-Once a game is analyzed, the input form collapses (click its header to
-reopen it for a new game) and a Lichess-style analysis board takes over: a
-chessboard with a player bar above and below showing each side's baseline
-and current rating estimate, a move list in Lichess's two-column style, a
-per-move metrics panel, and a rating chart across the full width with a
-marker that follows the current ply. See "Using the analysis board" below
-for controls.
+The input is a one-line bar at the top with five tabs: paste PGN, upload a
+`.pgn` file, enter a Lichess game ID/URL, pick a **sample game** (see "Sample
+games" below), or watch a game **live** (see "Live mode" below); an
+"Options" dropdown holds the per-side baseline, critical-move top-k, and
+min-ply overrides shared across tabs. Once a game is analyzed the bar
+collapses to a "Load game" button.
+
+**Layout.** The results page is a compact, Lichess-like, one-screen desktop
+layout: on a 1080p screen the whole analysis fits without page scrolling.
+The left column is a board sized from the viewport height, with a player bar
+above and below (name, rating estimate, actual rating and error, clock box)
+and one row of controls. The right column holds a small header (players,
+Live/Ongoing chips, the hide-ratings switch, the glossary), the two suspicion
+bars, a move list that scrolls on its own, and a collapsible move-details
+grid. A short rating chart runs across the full width underneath. The page
+text is kept to short labels; every explanation lives in the (i) popovers
+and the glossary. On narrow screens the columns stack (a dedicated phone
+layout is not built yet).
+
+**Theme.** Light and dark themes follow the operating system's
+`prefers-color-scheme` by default; the sun/moon button in the top bar
+switches explicitly and the choice is remembered per browser via
+`localStorage`. Every colour (board, chart, suspicion zones, chips, clocks,
+popovers) comes from CSS variables at the top of `src/static/styles.css`.
+See "Using the analysis board" below for controls.
 
 ### Using the analysis board
 
@@ -114,16 +128,15 @@ current orientation; the "Flip" button swaps orientation and the bars follow.
 Each bar shows the player's baseline rating, the model's rating estimate at
 the ply currently shown, and, when the source game recorded one, the
 player's actual rating and the signed error between the estimate and that
-actual rating (for example "estimate 1935, actual 1979, off by -44"). The
+actual rating (for example "1935 est, 1979 actual, -44"), plus the clock box
+(the side to move is highlighted; under 20 seconds it turns red). The
 actual rating comes only from the PGN `WhiteElo`/`BlackElo` header and is
 independent of any baseline override: overriding the baseline changes only
-the suspicion-score comparison, never the actual-rating display. The results
-header likewise shows each side's final error, and the metrics panel and
-sample cards below show the same actual/error pair for the currently shown
-ply and for the whole sample.
+the suspicion-score comparison, never the actual-rating display. At the last
+ply the error shown is the final error; the expanded sample card shows the
+sample's saved test error for comparison.
 
-**Reveal/hide toggle.** The "Hide actual ratings" switch next to the results
-header masks every actual-rating value and error across the bars, metrics
+**Reveal/hide toggle.** The "Hide ratings" switch in the results header masks every actual-rating value and error across the bars, metrics
 panel, chart, and sample card, showing a "Reveal" button in its place; this
 supports a guess-the-rating demo where a reviewer steps through the game
 watching only the live estimate before revealing the answer. Because the
@@ -138,13 +151,14 @@ returns, only what the page displays.
 (baseline, actual rating, error, deviation, attention, critical move,
 suspicion score, and more) shows a one-or-two-sentence plain-language
 explanation on hover, tap, or keyboard focus. The same explanations are also
-listed together in the collapsible "What do these numbers mean?" section
-near the results header, for a reviewer who wants the full list at once. The
+listed together in the "Glossary" dropdown ("What do these numbers mean?")
+in the results header, for a reviewer who wants the full list at once. The
 wording lives in one place, `METRIC_INFO` in `src/static/app.js`.
 
 **Moves panel.** Lists every move in standard two-column notation (move
-number, White, Black). Click a move to jump the board there. The move
-currently shown is highlighted and kept scrolled into view. A red star marks
+number, White, Black) with the time spent on each move. Click a move to jump
+the board there. The move currently shown is highlighted and kept in view by
+scrolling only the list itself, never the page. A red star marks
 a critical move (see "Move details" below).
 
 **Rating chart.** Full width, below the board and move list, like Lichess's
@@ -172,8 +186,9 @@ are all that remain visible.
 
 Keyboard shortcuts are ignored while typing in a text field.
 
-**Move details panel.** For the currently shown ply: the move in SAN, each
-side's rating estimate and its change from the previous ply, each side's
+**Move details panel.** A collapsible key/value grid for the currently shown
+ply: the mover's clock and time spent, each side's rating estimate and its
+change from the previous ply, each side's
 deviation from its baseline, the move's attention weight with its rank and
 percentile among all plies in the game (for example "top 5% of attention"),
 and whether the move is flagged critical with its rank. At the start of the
@@ -194,13 +209,13 @@ thesis's held-out TEST-partition corpus (games the model never trained on):
 95th percentile). Each bar is a segmented scale, not a plain gradient: the
 track itself is split into green/amber/red Typical/Unusual/Highly unusual
 zones sized from that side's resolved p75/p95 cutoffs, with the score shown
-as a marker (a needle with its value in a small bubble) at its position on
+as a needle marker (the number sits beside the chip) at its position on
 the scale, so the zone boundaries and the score's position are both visible
 at a glance instead of only in the chip text. The scale's max is
 `max(score, 1.6 * p95)` so all three zones stay proportionate and visible
-even when a score sits far past p95. A caption under the bars states the
-comparison is against ordinary games, "not evidence of engine use on its
-own." Cutoffs use the game's own time-control bucket (bullet/blitz/rapid/
+even when a score sits far past p95. The card header says "Review aid, not
+proof", and the label (i) explains the comparison against ordinary games.
+Cutoffs use the game's own time-control bucket (bullet/blitz/rapid/
 classical/ultrabullet, derived from the PGN `TimeControl` header) when that
 bucket has at least ~300 sides scored; otherwise they fall back to the
 overall cutoff across all time controls. This is the same wording, cutoffs
@@ -215,9 +230,10 @@ sees here. As of this writing the file is **provisional**: the full
 ~2,718-game stratified sample run was stopped early, so it currently reflects
 1,200 scored games (bullet and blitz fully covered; rapid partial; classical
 and ultrabullet not yet scored, both currently falling back to the overall
-cutoff). The app shows a banner under the suspicion bars whenever the served
-cutoffs are provisional, naming how many games back them; the banner
-disappears once the file is regenerated from the completed run. Method,
+cutoff). The app shows a "Provisional cutoffs" chip in the suspicion header whenever
+the served cutoffs are provisional (its popover names how many games back
+them); the chip disappears once the file is regenerated from the completed
+run. Method,
 the full percentile/CI table, and a sanity check running the 12 bundled
 sample games through this same pipeline are recorded outside this repo in
 the cutoffs report generated alongside this file.
@@ -262,19 +278,19 @@ same analysis board as every other input mode. Cards are grouped by
   synthetic end to end (no real player), and each substituted ply is known
   ground truth: it renders as a small square marker on the move list and
   the rating chart (next to the existing critical-move star/ring markers),
-  and the panel above the board shows the substitution rate, the Maia
+  and the sample card in the results column ("more") shows the substitution rate, the Maia
   rating band, the substitution engine, and this game's saved suspicion
   score (`S_att`) from thesis evaluation, next to the score this deployment
-  computes live, so the two can be compared directly. A neutral note on
-  every synthetic card explains why both sides can score high here: the
+  computes live, so the two can be compared directly. The engine-move
+  legend's (i) explains why both sides can score high here: the
   rating model reads Maia's play as coming from a player well above its
   nominal band (for example Maia 1100 read as roughly 2280), which is the
   known reason the computed suspicion score is weak on these samples.
 
-Every card also shows its saved held-out test error (rating games) or saved
+Every sample card (one line, with a "more" toggle) also shows its saved held-out test error (rating games) or saved
 `S_att` (synthetic games) alongside the app's own live estimate, so a viewer
 can see whether this deployment's numbers match the thesis evaluation's, and
-the actual rating(s) used for evaluation. The "Hide actual ratings" toggle
+the actual rating(s) used for evaluation. The "Hide ratings" switch
 (see "Using the analysis board") masks the actual-rating and test-error
 facts on this card the same way it masks the board and chart.
 
@@ -314,8 +330,17 @@ score and critical moves are likewise computed on the prefix so far and
 marked provisional, and can shift as the game continues. Per-move inference
 time on this deployment's CPU is shown in the status line after each move.
 
-Once the game ends, a **"Show full-game analysis"** button appears and
-switches to the normal, non-live analysis view for the finished game.
+Once the game ends, the board shows a **"Game over"** badge and a **"Full
+analysis"** button switches to the normal, non-live analysis view for the
+finished game. On TV, a featured game that has finished gets the same badge
+while the stream waits for the next featured game.
+
+**Live clocks.** At the latest ply the side-to-move clock counts down
+locally about every 100 ms (m:ss, with tenths under 10 seconds), and resyncs
+to the server's recorded clocks whenever a move arrives. It freezes when the
+game is over, while disconnected, while the browser tab is hidden (resyncing
+on return), and when you step back to an earlier ply, which shows that ply's
+recorded clocks instead. The clocks are estimates between updates.
 
 **Delay.** Lichess itself delays a spectator's view of an ongoing game by a
 few moves as an anti-cheating measure; the status line says so once
@@ -326,10 +351,19 @@ viewing the latest ply. Stepping back (via the board controls, keyboard, or
 the chart) stops following and shows a "Jump to live" button; new moves
 still arrive and grow the chart, but the board stays where you left it
 until you jump back. Stopping, or switching to a different game or tab,
-cleanly closes the stream. On a dropped connection to this app's own SSE
-endpoint the page reconnects once automatically, then shows a persistent
-error if that also fails; a dropped upstream connection to Lichess is
-retried once server-side, transparently, before that same error surfaces.
+cleanly closes the stream. Live updates never move the page: if the board is
+scrolled out of view, a small "New move" pill appears instead.
+
+**Connection states.** If this app's own SSE connection drops (or the
+browser goes offline), the board dims and blurs under a "Reconnecting..."
+badge while the page retries with backoff (1, 2, then 4 seconds); the clocks
+dim and stop. When retries run out it shows "Disconnected" with a Retry
+button, and it retries automatically when the browser comes back online. A
+dropped upstream connection to Lichess is retried once server-side first.
+Permanent problems (a bad game ID, a game without clocks, or a game that
+starts from a custom position or variant, such as a thematic arena) arrive
+as an SSE error event with the reason, which the page shows without
+reconnecting.
 
 ### Roadmap (not built)
 
