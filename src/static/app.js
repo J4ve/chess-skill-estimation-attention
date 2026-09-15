@@ -1685,6 +1685,21 @@ function setupKeyboardNav() {
 
 // "New move" pill: shown when a live move lands while the board is scrolled
 // out of view, instead of ever moving the page for the user.
+// The move list's height changes when panels above or below it appear or
+// collapse (live status, sample details, move details); keep the active move
+// in view when that happens.
+function setupMoveListResizeWatch() {
+  if (!("ResizeObserver" in window)) return;
+  let lastHeight = 0;
+  new ResizeObserver((entries) => {
+    const height = entries[0].contentRect.height;
+    if (Math.abs(height - lastHeight) < 1) return;
+    lastHeight = height;
+    const liveBrowsingHistory = !$("live-badge").hidden && !state.live.following;
+    if (state.result && !liveBrowsingHistory) markActiveMoveListEntry(state.currentPly);
+  }).observe($("move-list"));
+}
+
 function setupBoardVisibilityWatch() {
   const pill = $("new-move-pill");
   pill.addEventListener("click", () => {
@@ -2150,6 +2165,7 @@ function init() {
   setupChartPointerNav();
   setupKeyboardNav();
   setupBoardVisibilityWatch();
+  setupMoveListResizeWatch();
   setupLiveControls();
   setupLiveClockVisibility();
   setupLiveNetworkEvents();
