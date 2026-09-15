@@ -143,18 +143,34 @@
         </p>
         <div class="suspicion-bar-row">
           <span class="suspicion-label">White</span>
-          <div class="suspicion-bar-track"><div id="white-suspicion-bar" class="suspicion-bar-fill"></div></div>
+          <div id="white-suspicion-track" class="suspicion-bar-track">
+            <div id="white-suspicion-bar" class="suspicion-bar-fill"></div>
+            <div id="white-suspicion-tick-p75" class="suspicion-tick" hidden></div>
+            <div id="white-suspicion-tick-p95" class="suspicion-tick" hidden></div>
+          </div>
           <span id="white-suspicion-value" class="suspicion-value">-</span>
+          <span id="white-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span>
           <span id="white-baseline-source" class="baseline-source-tag">-</span>
         </div>
         <p id="white-suspicion-explain" class="suspicion-explain"></p>
         <div class="suspicion-bar-row">
           <span class="suspicion-label">Black</span>
-          <div class="suspicion-bar-track"><div id="black-suspicion-bar" class="suspicion-bar-fill"></div></div>
+          <div id="black-suspicion-track" class="suspicion-bar-track">
+            <div id="black-suspicion-bar" class="suspicion-bar-fill"></div>
+            <div id="black-suspicion-tick-p75" class="suspicion-tick" hidden></div>
+            <div id="black-suspicion-tick-p95" class="suspicion-tick" hidden></div>
+          </div>
           <span id="black-suspicion-value" class="suspicion-value">-</span>
+          <span id="black-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span>
           <span id="black-baseline-source" class="baseline-source-tag">-</span>
         </div>
         <p id="black-suspicion-explain" class="suspicion-explain"></p>
+        <p id="suspicion-label-caption" class="suspicion-label-caption" hidden>
+          Compared with ordinary rated games from the thesis test set. Not evidence of engine
+          use on its own.
+          <button type="button" class="info-icon" data-info-key="suspicionLabel" aria-label="What do these labels mean?">i</button>
+        </p>
+        <p id="suspicion-label-provisional" class="suspicion-label-provisional" hidden></p>
       </div>
 
       <div class="analysis-board-row">

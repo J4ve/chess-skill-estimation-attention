@@ -9,6 +9,13 @@ const SUSPICION_BAR_MAX = 400;
 const AUTOPLAY_INTERVAL_MS = 1000;
 const HIDE_ACTUAL_RATINGS_KEY = "ratingnet.hideActualRatings";
 
+// Mirrors suspicion_labels.LABEL_TEXT in src/suspicion_labels.py.
+const SUSPICION_LABEL_TEXT = {
+  typical: "Typical",
+  unusual: "Unusual",
+  highly_unusual: "Highly unusual: worth a human review",
+};
+
 // One or two short, plain-language sentences per metric. Kept as a single
 // object so wording can be edited in one place; used both for the (i)
 // popovers next to each label and for the "What do these numbers mean?"
@@ -45,6 +52,10 @@ const METRIC_INFO = {
   suspicion: {
     term: "Suspicion score (S_att)",
     text: "An attention-weighted average of how far a side's estimate strayed from its baseline over the whole game. It is a supplementary flag for human review, not proof of cheating: in thesis evaluation it separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).",
+  },
+  suspicionLabel: {
+    term: "Typical / Unusual / Highly unusual label",
+    text: "Compares this side's suspicion score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile of those games, Unusual is the 75th-95th percentile, and Highly unusual is above the 95th percentile. It describes how uncommon the score is among ordinary games, not whether anyone cheated; a clean synthetic game in thesis evaluation scored well into the highly-unusual range.",
   },
   provisional: {
     term: "Provisional badge",
@@ -776,6 +787,48 @@ function renderSuspicion(result) {
   $("black-suspicion-explain").textContent =
     `About ${Math.round(blackScore)} rating points of attention-weighted gap between the ` +
     `model's estimate and Black's baseline.`;
+
+  renderSuspicionLabelChip("white", result.white_suspicion_label, result.provisional);
+  renderSuspicionLabelChip("black", result.black_suspicion_label, result.provisional);
+  renderSuspicionTicks("white", result.suspicion_cutoffs_used);
+  renderSuspicionTicks("black", result.suspicion_cutoffs_used);
+
+  const cutoffsUsed = result.suspicion_cutoffs_used;
+  $("suspicion-label-caption").hidden = !cutoffsUsed;
+  $("suspicion-label-provisional").hidden = !(cutoffsUsed && cutoffsUsed.provisional);
+  if (cutoffsUsed && cutoffsUsed.provisional) {
+    $("suspicion-label-provisional").textContent =
+      cutoffsUsed.provisional_note || "These cutoffs are provisional and may be revised.";
+  }
+}
+
+function renderSuspicionLabelChip(prefix, label, provisional) {
+  const chip = $(`${prefix}-suspicion-label-chip`);
+  if (!label) {
+    chip.hidden = true;
+    chip.textContent = "";
+    delete chip.dataset.level;
+    return;
+  }
+  chip.hidden = false;
+  chip.dataset.level = label;
+  const text = SUSPICION_LABEL_TEXT[label] || label;
+  chip.textContent = provisional ? `${text} (so far)` : text;
+  chip.title = provisional ? "Provisional: based on the moves seen so far and can change as the game continues." : "";
+}
+
+function renderSuspicionTicks(prefix, cutoffs) {
+  const p75Tick = $(`${prefix}-suspicion-tick-p75`);
+  const p95Tick = $(`${prefix}-suspicion-tick-p95`);
+  if (!cutoffs) {
+    p75Tick.hidden = true;
+    p95Tick.hidden = true;
+    return;
+  }
+  p75Tick.style.left = `${Math.min(100, Math.max(0, (cutoffs.p75 / SUSPICION_BAR_MAX) * 100))}%`;
+  p95Tick.style.left = `${Math.min(100, Math.max(0, (cutoffs.p95 / SUSPICION_BAR_MAX) * 100))}%`;
+  p75Tick.hidden = false;
+  p95Tick.hidden = false;
 }
 
 function formatSource(source) {

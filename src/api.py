@@ -404,6 +404,8 @@ def _run_inference(
             "p95": resolved.p95,
             "source": resolved.source,
             "time_control": tc_bucket,
+            "provisional": SUSPICION_CUTOFFS.get("provisional", False),
+            "provisional_note": SUSPICION_CUTOFFS.get("provisional_note"),
         }
 
     result_header = (headers.get("Result") or "*").strip()

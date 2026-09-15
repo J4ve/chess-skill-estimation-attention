@@ -451,7 +451,7 @@ textarea {
 
 .suspicion-bar-row {
   display: grid;
-  grid-template-columns: 3.5rem minmax(0, 1fr) 4.5rem auto;
+  grid-template-columns: 3.5rem minmax(0, 1fr) 4.5rem auto auto;
   align-items: center;
   gap: 0.6rem;
   margin-bottom: 0.4rem;
@@ -463,6 +463,7 @@ textarea {
 }
 
 .suspicion-bar-track {
+  position: relative;
   background: #eceae4;
   border-radius: 999px;
   height: 0.8rem;
@@ -478,16 +479,81 @@ textarea {
   transition: width 0.3s ease;
 }
 
+.suspicion-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(31, 35, 32, 0.4);
+  pointer-events: none;
+}
+
+.suspicion-tick[hidden] {
+  display: none;
+}
+
 .suspicion-value {
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
   text-align: right;
 }
 
+.suspicion-label-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.suspicion-label-chip[hidden] {
+  display: none;
+}
+
+.suspicion-label-chip[data-level="typical"] {
+  background: rgba(74, 143, 102, 0.16);
+  color: var(--accent-dark);
+}
+
+.suspicion-label-chip[data-level="unusual"] {
+  background: rgba(228, 199, 102, 0.3);
+  color: #7a5e12;
+}
+
+.suspicion-label-chip[data-level="highly_unusual"] {
+  background: rgba(192, 74, 58, 0.16);
+  color: var(--danger-fill);
+}
+
 .suspicion-explain {
   margin: 0 0 0.6rem;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.suspicion-label-caption {
+  margin: 0.2rem 0 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.suspicion-label-caption[hidden] {
+  display: none;
+}
+
+.suspicion-label-provisional {
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  color: #7a5e12;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: 6px;
+}
+
+.suspicion-label-provisional[hidden] {
+  display: none;
 }
 
 .baseline-source-tag {
@@ -893,6 +959,7 @@ textarea {
     grid-template-columns: 3rem minmax(0, 1fr) 4rem;
   }
 
+  .suspicion-label-chip,
   .baseline-source-tag {
     grid-column: 2 / -1;
     justify-self: start;
