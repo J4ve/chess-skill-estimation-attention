@@ -3,8 +3,9 @@ FastAPI inference service for the RatingNet prototype.
 
 The service imports model classes directly (no shelling out to
 ``python src/chess_rating_net.py``) and loads a checkpoint once at startup,
-then exposes a PGN upload/text endpoint that returns per-move rating
-predictions and attention weights.
+then exposes PGN upload/text/Lichess-ID endpoints that return per-move rating
+predictions, attention weights, suspicion scores, and critical moves for a
+human fair-play reviewer.
 
 By default it serves the frozen thesis checkpoint
 (``models/preflight_check_2m/best_model.pth``, the tuned attention arm).
@@ -38,12 +39,16 @@ if str(_SRC_DIR) not in sys.path:
 import chess.pgn
 import torch
 import uvicorn
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from baseline import resolve_baseline
 from chess_rating_net import ChessEloPredictor
+from critical_moves import DEFAULT_TOP_K, compute_critical_moves
 from format_data import board_to_array, parse_game, time_to_seconds
+from lichess_client import LichessError, fetch_game_pgn, parse_game_id
 
 
 # Baseline normalization constants (must match training; see audit report).
@@ -58,11 +63,12 @@ MODEL_PARAMS: dict[str, Any] | None = None
 DEVICE: torch.device | None = None
 CHECKPOINT_PATH: Path | None = None
 
-# Lightweight cache: keyed by (white_name, black_name, pgn_hash) -> result.
+# Lightweight cache: keyed by a hash of the request inputs -> result.
 RESULT_CACHE: dict[str, Any] = {}
 CACHE_MAX_SIZE = 128
 
 LOG_PATH = Path(__file__).resolve().parent.parent / "logs" / "predictions.jsonl"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def _setup_logging() -> None:
@@ -195,10 +201,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RatingNet Prototype Inference API",
-    description="PGN-upload demo for move-by-move chess rating estimation and anomaly scoring.",
-    version="0.1.0",
+    description="Web prototype for move-by-move chess rating estimation and anomaly scoring.",
+    version="0.2.0",
     lifespan=lifespan,
 )
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class PGNTextRequest(BaseModel):
@@ -207,8 +216,14 @@ class PGNTextRequest(BaseModel):
     black_baseline: float | None = None
 
 
+class LichessGameRequest(BaseModel):
+    game_id: str
+    white_baseline: float | None = None
+    black_baseline: float | None = None
+
+
 def _pgn_to_tensor_inputs(pgn_text: str):
-    """Parse a PGN string and produce model-ready tensors plus move list."""
+    """Parse a PGN string and produce model-ready tensors plus move lists."""
     pgn_io = io.StringIO(pgn_text)
     game = chess.pgn.read_game(pgn_io)
     if game is None:
@@ -216,7 +231,10 @@ def _pgn_to_tensor_inputs(pgn_text: str):
 
     game_info = parse_game(game, max_plies=MAX_PLIES)
     if game_info is None:
-        raise ValueError("PGN has no usable clock annotations")
+        raise ValueError(
+            "PGN has no usable clock annotations. This model requires per-move "
+            "[%clk ...] comments; export the game with clock times included."
+        )
 
     positions = torch.stack(game_info["Positions"])  # (seq, 12, 8, 8)
     clocks = [time_to_seconds(c) for c in game_info["Clocks"]]
@@ -226,7 +244,7 @@ def _pgn_to_tensor_inputs(pgn_text: str):
     positions = positions.unsqueeze(0)  # (1, seq, 12, 8, 8)
     clocks = clocks.unsqueeze(0)  # (1, seq)
     lengths = torch.tensor([positions.size(1)], dtype=torch.int)
-    return positions, clocks, lengths, game_info["Moves"], game.headers
+    return positions, clocks, lengths, game_info["Moves"], game_info["SAN"], game.headers
 
 
 def _stable_cache_key(*parts: str) -> str:
@@ -235,14 +253,21 @@ def _stable_cache_key(*parts: str) -> str:
     return digest
 
 
+def _cache_put(cache_key: str, response: dict[str, Any]) -> None:
+    if len(RESULT_CACHE) >= CACHE_MAX_SIZE:
+        RESULT_CACHE.pop(next(iter(RESULT_CACHE)))
+    RESULT_CACHE[cache_key] = response
+
+
 def _run_inference(
     pgn_text: str,
-    white_baseline: float | None,
-    black_baseline: float | None,
+    white_baseline_request: float | None,
+    black_baseline_request: float | None,
+    top_k: int,
 ) -> dict[str, Any]:
     assert MODEL is not None and DEVICE is not None
 
-    positions, clocks, lengths, moves, headers = _pgn_to_tensor_inputs(pgn_text)
+    positions, clocks, lengths, moves, san_moves, headers = _pgn_to_tensor_inputs(pgn_text)
     positions = positions.to(DEVICE)
     clocks = clocks.to(DEVICE)
 
@@ -256,29 +281,36 @@ def _run_inference(
         )
 
     per_move_preds = outputs["per_move_preds"].squeeze(0).cpu()  # (seq, 2)
-    attention_weights = outputs["attention_weights"].squeeze(0).cpu().tolist() if outputs["attention_weights"] is not None else []
+    raw_attention = outputs["attention_weights"]
+    attention_weights = raw_attention.squeeze(0).cpu().tolist() if raw_attention is not None else []
 
     # De-standardize ratings back to original Elo scale.
     per_move_preds_orig = per_move_preds * RATINGS_STD + RATINGS_MEAN
 
-    # Use provided baselines; fall back to final predicted rating for each side.
-    if white_baseline is None:
-        white_baseline = per_move_preds_orig[-1, 0].item()
-    if black_baseline is None:
-        black_baseline = per_move_preds_orig[-1, 1].item()
-    baseline = torch.tensor([[white_baseline, black_baseline]], dtype=torch.float)
+    white_resolution = resolve_baseline(
+        "White", white_baseline_request, headers.get("WhiteElo"),
+        lambda: per_move_preds_orig[-1, 0].item(),
+    )
+    black_resolution = resolve_baseline(
+        "Black", black_baseline_request, headers.get("BlackElo"),
+        lambda: per_move_preds_orig[-1, 1].item(),
+    )
+    baseline = torch.tensor([[white_resolution.value, black_resolution.value]], dtype=torch.float)
+
+    warnings: list[str] = [w for w in (white_resolution.warning, black_resolution.warning) if w]
 
     # Anomaly scoring is only available when the served checkpoint has an anomaly
     # branch. Omori's baseline model_55.pth does not, so emit neutral scores there.
     seq_len = per_move_preds.size(0)
-    if MODEL.anomaly_detector is not None:
+    anomaly_available = MODEL.anomaly_detector is not None
+    if anomaly_available:
         # Compute anomaly scores using the attention-weighted deviation formula.
         # Predictions must be de-standardized so deviations are on the same Elo
         # scale as the baseline ratings.
         anomaly = MODEL.anomaly_detector(
             predictions=per_move_preds_orig.unsqueeze(0),
             baseline=baseline,
-            attention_weights=outputs["attention_weights"].squeeze(0).unsqueeze(0) if outputs["attention_weights"] is not None else None,
+            attention_weights=raw_attention.squeeze(0).unsqueeze(0) if raw_attention is not None else None,
         )
         white_deviation = anomaly["white_deviation"].squeeze(0)
         black_deviation = anomaly["black_deviation"].squeeze(0)
@@ -291,13 +323,18 @@ def _run_inference(
         white_score = 0.0
         black_score = 0.0
         combined_score = 0.0
+        warnings.append(
+            "This checkpoint has no attention/anomaly branch; suspicion scores "
+            "are neutral zeros, not a real assessment."
+        )
 
     move_records = []
     for i in range(seq_len):
         move_records.append(
             {
                 "ply": i + 1,
-                "move": moves[i] if i < len(moves) else None,
+                "move": san_moves[i] if i < len(san_moves) else None,
+                "uci": moves[i] if i < len(moves) else None,
                 "white_rating": round(per_move_preds_orig[i, 0].item(), 2),
                 "black_rating": round(per_move_preds_orig[i, 1].item(), 2),
                 "attention_weight": round(attention_weights[i], 6) if i < len(attention_weights) else None,
@@ -306,17 +343,45 @@ def _run_inference(
             }
         )
 
+    critical_moves, critical_move_warnings = compute_critical_moves(
+        move_records, anomaly_available, top_k=top_k
+    )
+    warnings.extend(critical_move_warnings)
+
+    result_header = (headers.get("Result") or "*").strip()
+    ongoing = result_header == "*"
+
     return {
         "headers": dict(headers),
-        "white_baseline": round(white_baseline, 2),
-        "black_baseline": round(black_baseline, 2),
+        "white_baseline": round(white_resolution.value, 2),
+        "black_baseline": round(black_resolution.value, 2),
+        "white_baseline_source": white_resolution.source,
+        "black_baseline_source": black_resolution.source,
+        "warnings": warnings,
         "white_final_rating": round(per_move_preds_orig[-1, 0].item(), 2),
         "black_final_rating": round(per_move_preds_orig[-1, 1].item(), 2),
         "white_suspicion_score": round(white_score, 4),
         "black_suspicion_score": round(black_score, 4),
         "combined_suspicion_score": round(combined_score, 4),
         "per_move": move_records,
+        "critical_moves": critical_moves,
+        "ongoing": ongoing,
+        "provisional": ongoing,
     }
+
+
+def _run_inference_or_422(
+    pgn_text: str,
+    white_baseline: float | None,
+    black_baseline: float | None,
+    top_k: int,
+) -> dict[str, Any]:
+    """Run inference, translating expected PGN/model-input problems into HTTP 422."""
+    try:
+        return _run_inference(pgn_text, white_baseline, black_baseline, top_k)
+    except ValueError as exc:
+        logging.info("Rejecting request: %s", exc)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/health")
@@ -330,27 +395,22 @@ async def health():
 
 
 @app.post("/predict/pgn")
-async def predict_pgn_text(request: PGNTextRequest):
-    """Submit PGN text and receive per-move ratings and attention weights."""
-    cache_key = _stable_cache_key("pgn_text", request.pgn, str(request.white_baseline), str(request.black_baseline))
+async def predict_pgn_text(
+    request: PGNTextRequest,
+    top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20, description="Critical moves to return per side"),
+):
+    """Submit PGN text and receive per-move ratings, suspicion scores, and critical moves."""
+    cache_key = _stable_cache_key(
+        "pgn_text", request.pgn, str(request.white_baseline), str(request.black_baseline), str(top_k)
+    )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
 
-    try:
-        result = _run_inference(
-            request.pgn,
-            request.white_baseline,
-            request.black_baseline,
-        )
-    except Exception as exc:
-        logging.exception("Inference failed")
-        return JSONResponse(status_code=400, content={"error": str(exc)})
+    result = _run_inference_or_422(request.pgn, request.white_baseline, request.black_baseline, top_k)
 
     _log_prediction({"source": "pgn_text", "cache_key": cache_key, **result})
     response = {"status": "ok", **result}
-    if len(RESULT_CACHE) >= CACHE_MAX_SIZE:
-        RESULT_CACHE.pop(next(iter(RESULT_CACHE)))
-    RESULT_CACHE[cache_key] = response
+    _cache_put(cache_key, response)
     return response
 
 
@@ -359,38 +419,77 @@ async def predict_pgn_upload(
     file: UploadFile = File(...),
     white_baseline: float | None = Form(None),
     black_baseline: float | None = Form(None),
+    top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20, description="Critical moves to return per side"),
 ):
-    """Upload a .pgn file and receive per-move ratings and attention weights."""
+    """Upload a .pgn file and receive per-move ratings, suspicion scores, and critical moves."""
     content = await file.read()
     pgn_text = content.decode("utf-8", errors="replace")
-    cache_key = _stable_cache_key("pgn_upload", file.filename, pgn_text, str(white_baseline), str(black_baseline))
+    cache_key = _stable_cache_key(
+        "pgn_upload", file.filename, pgn_text, str(white_baseline), str(black_baseline), str(top_k)
+    )
+    if cache_key in RESULT_CACHE:
+        return RESULT_CACHE[cache_key]
+
+    result = _run_inference_or_422(pgn_text, white_baseline, black_baseline, top_k)
+
+    _log_prediction({"source": "pgn_upload", "filename": file.filename, "cache_key": cache_key, **result})
+    response = {"status": "ok", **result}
+    _cache_put(cache_key, response)
+    return response
+
+
+@app.post("/predict/lichess")
+async def predict_lichess_game(
+    request: LichessGameRequest,
+    top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20, description="Critical moves to return per side"),
+):
+    """Fetch a Lichess game by ID or URL and receive per-move ratings, suspicion scores, and critical moves."""
+    try:
+        game_id = parse_game_id(request.game_id)
+    except LichessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    cache_key = _stable_cache_key(
+        "lichess", game_id, str(request.white_baseline), str(request.black_baseline), str(top_k)
+    )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
 
     try:
-        result = _run_inference(pgn_text, white_baseline, black_baseline)
-    except Exception as exc:
-        logging.exception("Inference failed")
-        return JSONResponse(status_code=400, content={"error": str(exc)})
+        pgn_text = await fetch_game_pgn(game_id)
+    except LichessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    _log_prediction({"source": "pgn_upload", "filename": file.filename, "cache_key": cache_key, **result})
+    result = _run_inference_or_422(pgn_text, request.white_baseline, request.black_baseline, top_k)
+    result["lichess_game_id"] = game_id
+
+    _log_prediction({"source": "lichess", "game_id": game_id, "cache_key": cache_key, **result})
     response = {"status": "ok", **result}
-    if len(RESULT_CACHE) >= CACHE_MAX_SIZE:
-        RESULT_CACHE.pop(next(iter(RESULT_CACHE)))
-    RESULT_CACHE[cache_key] = response
+    _cache_put(cache_key, response)
     return response
+
+
+@app.get("/api")
+async def api_index():
+    return {
+        "message": "RatingNet Prototype API",
+        "endpoints": {
+            "health": "GET /health",
+            "predict_text": "POST /predict/pgn",
+            "predict_upload": "POST /predict/upload",
+            "predict_lichess": "POST /predict/lichess",
+        },
+    }
 
 
 @app.get("/")
 async def root():
-    return {
-        "message": "RatingNet Prototype API",
-        "endpoints": {
-            "health": "/health",
-            "predict_text": "POST /predict/pgn",
-            "predict_upload": "POST /predict/upload",
-        },
-    }
+    index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        return {
+            "message": "RatingNet Prototype API (no web page built yet; see GET /api)",
+        }
+    return FileResponse(index_path)
 
 
 if __name__ == "__main__":

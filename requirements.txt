@@ -3,6 +3,7 @@ chess
 fastapi
 uvicorn
 python-multipart
+httpx
 numpy
 scikit-learn
 pyyaml

@@ -52,6 +52,7 @@ def parse_game(
     time_control = game.headers.get("TimeControl", "")
     board = game.board()
     moves = []
+    san_moves = []
     clocks = []
     positions = []
     node = game
@@ -59,6 +60,7 @@ def parse_game(
     while node.variations and ply_count < max_plies:
         next_node = node.variation(0)
         move = next_node.move
+        san_moves.append(board.san(move))
         board.push(move)
         positions.append(board_to_array(board))
         moves.append(move.uci())
@@ -91,6 +93,7 @@ def parse_game(
         "Clocks": clocks,
         "Positions": positions,
         "Moves": moves,
+        "SAN": san_moves,
         "Time": time_control,
     }
 
