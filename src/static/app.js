@@ -1844,6 +1844,10 @@ function stopLiveStream(opts = {}) {
 function setLiveClockAnchor(result) {
   const perMove = state.live.frozenPerMove;
   const latestPly = perMove.length;
+  const previous = state.live.clockAnchor;
+  if (previous && previous.ply === latestPly && previous.gameId === state.live.gameId) {
+    return; // Same position re-sent with no new move: keep counting down.
+  }
   const side = sideToMoveAtPly(latestPly);
   const seconds = clockSecondsForSide({ ...result, per_move: perMove }, latestPly, side);
   if (typeof seconds !== "number") {
@@ -1853,7 +1857,13 @@ function setLiveClockAnchor(result) {
   // The update was sent after inference finished, so the clock has already
   // been running for about that long.
   const inferenceMs = typeof result.inference_ms === "number" ? result.inference_ms : 0;
-  state.live.clockAnchor = { ply: latestPly, side, seconds, at: performance.now() - inferenceMs };
+  state.live.clockAnchor = {
+    ply: latestPly,
+    side,
+    seconds,
+    at: performance.now() - inferenceMs,
+    gameId: state.live.gameId,
+  };
 }
 
 function liveClockShouldTick() {
@@ -1910,16 +1920,24 @@ function handleLiveMessage(payload) {
   if (payload.type === "status") {
     switch (payload.state) {
       case "finished":
+        // Keep listening: for a game that had already finished, the server
+        // sends its one full update right after this status, then closes.
         state.live.finished = true;
-        closeLiveEventSourceQuietly();
         state.live.active = false;
+        clearLiveReconnectTimer();
         setLiveConnState("finished");
         break;
       case "reconnecting":
         setLiveConnState("reconnecting");
         break;
       case "connecting":
-        if (state.live.connState !== "reconnecting") setLiveConnState("connecting");
+        if (state.live.connState === "reconnecting") break;
+        if (state.live.finished && liveSessionOnScreen()) {
+          setLiveConnState("finished", "waiting for the next TV game");
+          break;
+        }
+        // On TV this also means "lost sync, waiting for TV to switch games".
+        setLiveConnState("connecting", liveSessionOnScreen() ? "waiting for the next TV game" : "");
         break;
       case "connected":
         setLiveConnState("connected");
@@ -1947,7 +1965,7 @@ function handleLiveMessage(payload) {
     clearLiveReconnectTimer();
     state.live.active = false;
     showError(detail);
-    setLiveConnState("error", "see message above");
+    setLiveConnState("error");
     return;
   }
 
@@ -1960,6 +1978,12 @@ function handleLiveMessage(payload) {
       // Lichess TV switched to a new game: start a fresh frozen history.
       state.live.frozenPerMove = [];
       state.live.following = true;
+      state.live.finished = false;
+      state.live.clockAnchor = null;
+    }
+    if (state.live.mode === "tv" && result.provisional === false) {
+      // The featured game has a final result; TV stays connected for the next one.
+      state.live.finished = true;
     }
     state.live.gameId = result.lichess_game_id || state.live.gameId;
     state.live.reconnectAttempts = 0;
@@ -1967,6 +1991,7 @@ function handleLiveMessage(payload) {
     if (state.live.mode === "tv") clearError();
 
     const previousLength = state.live.frozenPerMove.length;
+    const boardWasOnScreen = liveSessionOnScreen();
     const merged = mergeLiveUpdate(result);
     const wasFollowing = state.live.following || !state.result || $("live-badge").hidden;
     const previousPly = state.currentPly;
@@ -1976,8 +2001,8 @@ function handleLiveMessage(payload) {
     if (!wasFollowing) {
       renderBoardAtPly(Math.min(previousPly, state.fenAtPly.length - 1), { keepListScroll: true });
     }
-    setLiveConnState("connected");
-    if (merged.per_move.length > previousLength && !state.boardInView) {
+    setLiveConnState(state.live.finished ? "finished" : "connected");
+    if (boardWasOnScreen && merged.per_move.length > previousLength && !state.boardInView) {
       $("new-move-pill").hidden = false;
     }
   }
@@ -2022,7 +2047,12 @@ function connectLiveEventSource() {
     handleLiveMessage(payload);
   };
   source.onerror = () => {
-    if (!state.live.active || state.live.eventSource !== source) return;
+    if (!state.live.active || state.live.eventSource !== source) {
+      // Stream ended after a final state (game over, stopped): close it so
+      // EventSource does not silently auto-reconnect.
+      source.close();
+      return;
+    }
     closeLiveEventSourceQuietly();
     scheduleLiveReconnect();
   };
