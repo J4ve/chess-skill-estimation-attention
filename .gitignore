@@ -14,3 +14,7 @@ logs/
 runs/
 __pycache__/
 *.pyc
+
+# Local agent notes (kept out of the public repo)
+CLAUDE.md
+AGENTS.md
