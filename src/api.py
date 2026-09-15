@@ -47,7 +47,14 @@ from pydantic import BaseModel
 from baseline import resolve_actual_rating, resolve_baseline
 from chess_rating_net import ChessEloPredictor
 from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
-from format_data import board_to_array, parse_game, time_control_bucket, time_to_seconds
+from format_data import (
+    board_to_array,
+    compute_time_spent,
+    parse_game,
+    parse_time_control,
+    time_control_bucket,
+    time_to_seconds,
+)
 from lichess_client import LichessError, fetch_game_pgn, parse_game_id
 from live import LiveGamePrefix, stream_game, stream_tv
 from suspicion_labels import label_for_score, resolve_cutoffs
@@ -269,14 +276,22 @@ def _pgn_to_tensor_inputs(pgn_text: str):
         )
 
     positions = torch.stack(game_info["Positions"])  # (seq, 12, 8, 8)
-    clocks = [time_to_seconds(c) for c in game_info["Clocks"]]
-    clocks = [(c - CLOCKS_MEAN) / CLOCKS_STD for c in clocks]
+    raw_clock_seconds = [time_to_seconds(c) for c in game_info["Clocks"]]
+    clocks = [(c - CLOCKS_MEAN) / CLOCKS_STD for c in raw_clock_seconds]
     clocks = torch.tensor(clocks, dtype=torch.float)
 
     positions = positions.unsqueeze(0)  # (1, seq, 12, 8, 8)
     clocks = clocks.unsqueeze(0)  # (1, seq)
     lengths = torch.tensor([positions.size(1)], dtype=torch.int)
-    return positions, clocks, lengths, game_info["Moves"], game_info["SAN"], game.headers
+    return (
+        positions,
+        clocks,
+        lengths,
+        game_info["Moves"],
+        game_info["SAN"],
+        game.headers,
+        raw_clock_seconds,
+    )
 
 
 def _stable_cache_key(*parts: str) -> str:
@@ -300,7 +315,7 @@ def _run_inference(
 ) -> dict[str, Any]:
     assert MODEL is not None and DEVICE is not None
 
-    positions, clocks, lengths, moves, san_moves, headers = _pgn_to_tensor_inputs(pgn_text)
+    positions, clocks, lengths, moves, san_moves, headers, raw_clock_seconds = _pgn_to_tensor_inputs(pgn_text)
     positions = positions.to(DEVICE)
     clocks = clocks.to(DEVICE)
 
@@ -367,6 +382,12 @@ def _run_inference(
             "are neutral zeros, not a real assessment."
         )
 
+    # Clock remaining is already parsed from the PGN's [%clk ...] comments (one of
+    # the model's own inputs; see the "clockTime" METRIC_INFO entry). Time spent
+    # per move is derived from it, not a separate model output.
+    tc_base, tc_increment = parse_time_control(headers.get("TimeControl"))
+    time_spent_seconds = compute_time_spent(raw_clock_seconds, tc_base, tc_increment)
+
     move_records = []
     for i in range(seq_len):
         move_records.append(
@@ -379,6 +400,8 @@ def _run_inference(
                 "attention_weight": round(attention_weights[i], 6) if i < len(attention_weights) else None,
                 "white_deviation": round(white_deviation[i].item(), 4),
                 "black_deviation": round(black_deviation[i].item(), 4),
+                "clock_seconds": raw_clock_seconds[i] if i < len(raw_clock_seconds) else None,
+                "time_spent_seconds": time_spent_seconds[i] if i < len(time_spent_seconds) else None,
             }
         )
 

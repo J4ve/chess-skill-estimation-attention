@@ -112,18 +112,48 @@ def categorize_time_control(estimated_duration: int) -> str:
         return "classical"
 
 
+def parse_time_control(time_control_header: str | None) -> tuple[int | None, int | None]:
+    """Parse a PGN ``TimeControl`` header (``"{base_seconds}+{increment_seconds}"``,
+    e.g. "180+0") into ``(base, increment)``. Returns ``(None, None)`` for a
+    missing header, correspondence ("-"), or any value that isn't exactly two
+    digit parts.
+    """
+    if not time_control_header:
+        return None, None
+    parts = time_control_header.split("+")
+    if len(parts) != 2 or not (parts[0].isdigit() and parts[1].isdigit()):
+        return None, None
+    return int(parts[0]), int(parts[1])
+
+
 def time_control_bucket(time_control_header: str | None) -> str | None:
     """Derive a Lichess time-control bucket from a PGN ``TimeControl`` header.
 
-    ``TimeControl`` is ``"{base_seconds}+{increment_seconds}"`` (e.g. "180+0").
-    Returns None for a missing header, correspondence ("-"), or any other value
-    that isn't exactly two digit parts, so callers can fall back to an
-    overall/ungrouped cutoff instead of guessing.
+    Returns None when ``parse_time_control`` can't parse the header, so callers
+    can fall back to an overall/ungrouped cutoff instead of guessing.
     """
-    if not time_control_header:
+    base, inc = parse_time_control(time_control_header)
+    if base is None:
         return None
-    parts = time_control_header.split("+")
-    if len(parts) != 2 or not (parts[0].isdigit() and parts[1].isdigit()):
-        return None
-    base, inc = int(parts[0]), int(parts[1])
     return categorize_time_control(base + 40 * inc)
+
+
+def compute_time_spent(
+    clock_seconds: list[int], base_seconds: int | None, increment_seconds: int | None
+) -> list[int | None]:
+    """For each ply's remaining clock (sides alternate: ply 0 is White's first
+    move, ply 1 is Black's, ply 2 is White's second, ...), compute the time
+    spent on that move: that side's previous remaining clock minus this ply's
+    clock, plus the increment.
+
+    A side's first move (ply 0 or 1) has no earlier in-game clock to compare
+    against, so it falls back to the ``TimeControl`` base allotment; when that
+    header couldn't be parsed (``base_seconds`` is None), the result for that
+    ply is None rather than a guess.
+    """
+    inc = increment_seconds or 0
+    spent: list[int | None] = []
+    for i, clock in enumerate(clock_seconds):
+        previous = clock_seconds[i - 2] if i >= 2 else base_seconds
+        spent.append(None if previous is None else previous - clock + inc)
+    return spent

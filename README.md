@@ -396,7 +396,13 @@ All three `predict/*` endpoints return the same shape:
   derived from the PGN `TimeControl` header, or `null` if it couldn't be
   parsed). `null` under the same conditions as the labels above.
 - `per_move`: one record per ply (`ply`, `move` as SAN, `uci`, `white_rating`,
-  `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`).
+  `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`,
+  `clock_seconds`, `time_spent_seconds`). `clock_seconds` is that ply's mover's
+  remaining clock, parsed from the PGN's `[%clk ...]` comments (one of the
+  model's own inputs, not a derived value). `time_spent_seconds` is that
+  side's previous remaining clock minus `clock_seconds` plus any `TimeControl`
+  increment; `null` for a side's first move when `TimeControl` couldn't be
+  parsed (see `format_data.compute_time_spent`).
 - `critical_moves`: up to `top_k` entries per side, ranked by
   `attention_weight * |deviation|` for that side (`ply`, `move`, `side`,
   `attention_weight`, `deviation`, `weighted_score`), excluding plies before

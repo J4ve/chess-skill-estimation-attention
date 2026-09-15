@@ -41,10 +41,11 @@ def test_unparseable_text_raises_value_error():
 
 
 def test_pgn_with_clocks_parses_successfully():
-    positions, clocks, lengths, moves, san_moves, headers = _pgn_to_tensor_inputs(WITH_CLOCK_PGN)
+    positions, clocks, lengths, moves, san_moves, headers, raw_clock_seconds = _pgn_to_tensor_inputs(WITH_CLOCK_PGN)
     assert positions.shape[1] == 4  # 4 plies
     assert clocks.shape[1] == 4
     assert lengths.tolist() == [4]
     assert moves == ["e2e4", "e7e5", "g1f3", "b8c6"]
     assert san_moves == ["e4", "e5", "Nf3", "Nc6"]
     assert headers.get("WhiteElo") == "1500"
+    assert raw_clock_seconds == [300, 300, 298, 298]
