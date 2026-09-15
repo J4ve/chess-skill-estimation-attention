@@ -211,6 +211,17 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def revalidate_frontend(request, call_next):
+    # The page and its assets change together on every prototype update. Without
+    # this, a browser can pair a fresh index.html (served directly at "/") with a
+    # stale cached app.js, leaving new controls on the page with no handlers.
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 class PGNTextRequest(BaseModel):
     pgn: str
     white_baseline: float | None = None
