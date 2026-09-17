@@ -14,6 +14,10 @@ checkpoint is not found and no override is set, it falls back to Omori's
 released baseline (``model_55.pth``) and logs a warning, since that
 checkpoint has no attention or anomaly branch.
 
+The main suspicion score is the trained per-move detector (``detector.py``,
+thesis arm A3g); the parameter-free attention-weighted score S_att from
+``anomaly.py`` is still computed and returned as ``*_computed_score``.
+
 Predictions and attention weights are logged to ``logs/predictions.jsonl``
 for reproducibility and fairness-review audit trails.
 """
@@ -47,6 +51,7 @@ from pydantic import BaseModel
 from baseline import resolve_actual_rating, resolve_baseline
 from chess_rating_net import ChessEloPredictor
 from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
+import detector as detector_module
 from format_data import (
     board_to_array,
     compute_time_spent,
@@ -73,11 +78,23 @@ MODEL_PARAMS: dict[str, Any] | None = None
 DEVICE: torch.device | None = None
 CHECKPOINT_PATH: Path | None = None
 
-# Suspicion-score percentile cutoffs (src/static/suspicion_cutoffs.json), loaded once
-# at startup. None when the file is missing, in which case suspicion labels are
-# omitted from responses rather than guessed. See "Suspicion labels" in the README.
+# The trained detector (main suspicion score), loaded once at startup. None when
+# its weights are missing, in which case the computed score S_att is the main
+# score instead and a warning says so.
+DETECTOR: detector_module.Detector | None = None
+
+SCORE_KIND_DETECTOR = "detector"
+SCORE_KIND_COMPUTED = "computed"
+COMPUTED_SCORE_ID = "s_att"
+
+# Percentile cutoffs, loaded once at startup: one file per score, each naming the
+# score it belongs to in its "score" field so the two can never be mixed. None
+# when a file is missing or names a different score, in which case that score's
+# labels are omitted rather than guessed. See "Suspicion labels" in the README.
 SUSPICION_CUTOFFS: dict[str, Any] | None = None
+COMPUTED_CUTOFFS: dict[str, Any] | None = None
 SUSPICION_CUTOFFS_PATH = Path(__file__).resolve().parent / "static" / "suspicion_cutoffs.json"
+COMPUTED_CUTOFFS_PATH = Path(__file__).resolve().parent / "static" / "suspicion_cutoffs_s_att.json"
 
 # Lightweight cache: keyed by a hash of the request inputs -> result.
 RESULT_CACHE: dict[str, Any] = {}
@@ -204,26 +221,48 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path
     return model, params, device, checkpoint_path
 
 
-def _load_suspicion_cutoffs() -> dict[str, Any] | None:
-    if not SUSPICION_CUTOFFS_PATH.exists():
+def _load_cutoffs(path: Path, expected_score: str) -> dict[str, Any] | None:
+    if not path.exists():
         logging.warning(
-            "No suspicion cutoffs file at %s; suspicion_score labels will be omitted "
-            "from responses until one is generated.",
-            SUSPICION_CUTOFFS_PATH,
+            "No cutoffs file at %s; labels for score '%s' will be omitted from responses.",
+            path,
+            expected_score,
         )
         return None
-    with SUSPICION_CUTOFFS_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    with path.open(encoding="utf-8") as f:
+        cutoffs = json.load(f)
+    if cutoffs.get("score") != expected_score:
+        logging.warning(
+            "Cutoffs file %s is for score '%s', not '%s'; ignoring it so labels are never "
+            "computed against another score's distribution.",
+            path,
+            cutoffs.get("score"),
+            expected_score,
+        )
+        return None
+    return cutoffs
+
+
+def _load_detector() -> detector_module.Detector | None:
+    if not detector_module.DEFAULT_WEIGHTS_PATH.exists():
+        logging.warning(
+            "Detector weights not found at %s; serving the computed score as the main suspicion score.",
+            detector_module.DEFAULT_WEIGHTS_PATH,
+        )
+        return None
+    return detector_module.load_detector(device=DEVICE)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup hook: load the model once and keep it in memory."""
-    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH, SUSPICION_CUTOFFS
+    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH, SUSPICION_CUTOFFS, COMPUTED_CUTOFFS, DETECTOR
     _setup_logging()
     MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH = _load_model()
     logging.info("Serving checkpoint: %s", CHECKPOINT_PATH)
-    SUSPICION_CUTOFFS = _load_suspicion_cutoffs()
+    DETECTOR = _load_detector()
+    SUSPICION_CUTOFFS = _load_cutoffs(SUSPICION_CUTOFFS_PATH, detector_module.SCORE_ID)
+    COMPUTED_CUTOFFS = _load_cutoffs(COMPUTED_CUTOFFS_PATH, COMPUTED_SCORE_ID)
     yield
     MODEL = None
 
@@ -311,6 +350,31 @@ def _cache_put(cache_key: str, response: dict[str, Any]) -> None:
     RESULT_CACHE[cache_key] = response
 
 
+def _labels_for_scores(
+    cutoffs: dict[str, Any] | None,
+    white_score: float,
+    black_score: float,
+    time_control: str | None,
+) -> tuple[str | None, str | None, dict[str, Any] | None]:
+    """(white_label, black_label, cutoffs_used) for one score, or all None when
+    that score has no cutoffs file."""
+    if cutoffs is None:
+        return None, None, None
+    resolved = resolve_cutoffs(cutoffs, time_control)
+    overall_n_sides = (cutoffs.get("overall") or {}).get("n_sides")
+    used = {
+        "score": cutoffs.get("score"),
+        "p75": resolved.p75,
+        "p95": resolved.p95,
+        "source": resolved.source,
+        "time_control": time_control,
+        "provisional": cutoffs.get("provisional", False),
+        "provisional_note": cutoffs.get("provisional_note"),
+        "provisional_games": overall_n_sides // 2 if isinstance(overall_n_sides, int) else None,
+    }
+    return label_for_score(white_score, resolved), label_for_score(black_score, resolved), used
+
+
 def _run_inference(
     pgn_text: str,
     white_baseline_request: float | None,
@@ -373,18 +437,33 @@ def _run_inference(
         )
         white_deviation = anomaly["white_deviation"].squeeze(0)
         black_deviation = anomaly["black_deviation"].squeeze(0)
-        white_score = anomaly["white_score"].item()
-        black_score = anomaly["black_score"].item()
-        combined_score = anomaly["combined_score"].item()
+        white_computed = anomaly["white_score"].item()
+        black_computed = anomaly["black_score"].item()
+        combined_computed = anomaly["combined_score"].item()
     else:
         white_deviation = torch.zeros(seq_len)
         black_deviation = torch.zeros(seq_len)
-        white_score = 0.0
-        black_score = 0.0
-        combined_score = 0.0
+        white_computed = 0.0
+        black_computed = 0.0
+        combined_computed = 0.0
         warnings.append(
             "This checkpoint has no attention/anomaly branch; suspicion scores "
             "are neutral zeros, not a real assessment."
+        )
+
+    # The trained detector reads the rating model's per-move estimates and
+    # attention, so it needs the same attention-enabled checkpoint.
+    white_detector = None
+    black_detector = None
+    if DETECTOR is not None and anomaly_available and raw_attention is not None:
+        white_detector, black_detector = detector_module.score_game(
+            DETECTOR,
+            per_move_preds_orig.numpy(),
+            raw_attention.squeeze(0).cpu().numpy(),
+            moves,
+            raw_clock_seconds,
+            white_resolution.value,
+            black_resolution.value,
         )
 
     # Clock remaining is already parsed from the PGN's [%clk ...] comments (one of
@@ -415,28 +494,28 @@ def _run_inference(
     )
     warnings.extend(critical_move_warnings)
 
-    # Suspicion labels compare this game's score with ordinary held-out test
-    # games (see suspicion_labels.py and src/static/suspicion_cutoffs.json's own
+    # Suspicion labels compare each score with ordinary held-out test games, using
+    # that score's own cutoffs file (see suspicion_labels.py and each file's
     # "note"), never a cheat-detection verdict. Omitted (None) when the checkpoint
-    # has no anomaly branch or no cutoffs file has been generated yet.
-    white_suspicion_label = None
-    black_suspicion_label = None
-    suspicion_cutoffs_used = None
-    if anomaly_available and SUSPICION_CUTOFFS is not None:
-        tc_bucket = time_control_bucket(headers.get("TimeControl"))
-        resolved = resolve_cutoffs(SUSPICION_CUTOFFS, tc_bucket)
-        white_suspicion_label = label_for_score(white_score, resolved)
-        black_suspicion_label = label_for_score(black_score, resolved)
-        overall_n_sides = (SUSPICION_CUTOFFS.get("overall") or {}).get("n_sides")
-        suspicion_cutoffs_used = {
-            "p75": resolved.p75,
-            "p95": resolved.p95,
-            "source": resolved.source,
-            "time_control": tc_bucket,
-            "provisional": SUSPICION_CUTOFFS.get("provisional", False),
-            "provisional_note": SUSPICION_CUTOFFS.get("provisional_note"),
-            "provisional_games": overall_n_sides // 2 if isinstance(overall_n_sides, int) else None,
-        }
+    # has no anomaly branch or the score has no cutoffs file.
+    tc_bucket = time_control_bucket(headers.get("TimeControl"))
+    computed_labels = (None, None, None)
+    if anomaly_available:
+        computed_labels = _labels_for_scores(COMPUTED_CUTOFFS, white_computed, black_computed, tc_bucket)
+
+    if white_detector is not None and black_detector is not None:
+        score_kind = SCORE_KIND_DETECTOR
+        white_score, black_score = white_detector, black_detector
+        main_labels = _labels_for_scores(SUSPICION_CUTOFFS, white_detector, black_detector, tc_bucket)
+    else:
+        score_kind = SCORE_KIND_COMPUTED
+        white_score, black_score = white_computed, black_computed
+        main_labels = computed_labels
+        if anomaly_available:
+            warnings.append(
+                "The trained detector is not available on this server, so the main suspicion "
+                "score shown is the computed attention-weighted score (S_att)."
+            )
 
     result_header = (headers.get("Result") or "*").strip()
     ongoing = result_header == "*"
@@ -452,12 +531,18 @@ def _run_inference(
         "warnings": warnings,
         "white_final_rating": round(per_move_preds_orig[-1, 0].item(), 2),
         "black_final_rating": round(per_move_preds_orig[-1, 1].item(), 2),
-        "white_suspicion_score": round(white_score, 4),
-        "black_suspicion_score": round(black_score, 4),
-        "combined_suspicion_score": round(combined_score, 4),
-        "white_suspicion_label": white_suspicion_label,
-        "black_suspicion_label": black_suspicion_label,
-        "suspicion_cutoffs_used": suspicion_cutoffs_used,
+        "suspicion_score_kind": score_kind,
+        "white_suspicion_score": round(white_score, 6),
+        "black_suspicion_score": round(black_score, 6),
+        "white_suspicion_label": main_labels[0],
+        "black_suspicion_label": main_labels[1],
+        "suspicion_cutoffs_used": main_labels[2],
+        "white_computed_score": round(white_computed, 4),
+        "black_computed_score": round(black_computed, 4),
+        "combined_computed_score": round(combined_computed, 4),
+        "white_computed_label": computed_labels[0],
+        "black_computed_label": computed_labels[1],
+        "computed_cutoffs_used": computed_labels[2],
         "per_move": move_records,
         "critical_moves": critical_moves,
         "critical_moves_min_ply": min_ply,
