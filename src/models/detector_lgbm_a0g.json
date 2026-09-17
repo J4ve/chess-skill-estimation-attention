@@ -1,0 +1,218 @@
+{
+  "score_id": "lgbm_a0g",
+  "arm": "A0g",
+  "model": "LightGBM binary classifier on 97 pooled per-game features (rating model per-ply outputs plus board and clock facts, suspect side and all plies)",
+  "model_file": "detector_lgbm_a0g.txt",
+  "model_md5": "3ae8f9d5766a09fe15fd167ada2a1f9f",
+  "source": {
+    "host": "hpc.cspc.edu.ph",
+    "results": "~/Bacsain/thesis2/analysis/extra_arms/A0g/results.json (created 2026-09-15 13:54:16 +0800)",
+    "scores": "~/Bacsain/thesis2/analysis/extra_arms/A0g/scores.npz",
+    "training_code": "~/Bacsain/thesis2/analysis/scripts/extra_arm_a0.py --split grouped (md5 b114bb0fdc5fd5e6ee7e9edecb6432af)",
+    "shared_code": "~/Bacsain/thesis2/analysis/scripts/extra_arms_common.py (md5 ad5b8f0983a2a9ec6c11a8d2312be7bb)",
+    "feature_code": "~/Bacsain/thesis2/analysis/scripts/train_anomaly_detector.py pool_game with eng_pp=None (md5 ea620bb5edef25eff5d69f1a7a1cf9c2)",
+    "per_ply_features": "~/Bacsain/thesis2/analysis/v2_features/rating_cheap.npz (md5 98b7b04261fd1fc0240edf1a103ab171), as for the per-move detector",
+    "rating_checkpoint": "models/preflight_check_2m/best_model.pth (md5 fcb38b8a6a3ee04a6b1859dd5bc69b75)"
+  },
+  "refit": {
+    "why": "the thesis A0g run saved scores.npz and results.json but not the fitted model",
+    "how": "experiments/method_parity/a0g_refit.py re-ran extra_arm_a0.fit_lgbm unchanged on the cached pooled features (analysis/extra_arms/cache/pooled_features.npz, md5 4c4d514376520e37bb5a7154f780c9ea) and the same grouped split, then saved booster.save_model(num_iteration=best_iteration)",
+    "date": "2026-09-17",
+    "best_iteration": 460,
+    "check": "max |re-fit score - stored A0g score| = 0.0 over all 268,000 corpus games"
+  },
+  "corpus": "synthetic anomaly corpus v2 (data/anomaly_corpus_v2, Maia bands with Stockfish 16 / Lc0 substitutions, real countdown clocks)",
+  "split": "grouped",
+  "split_description": "twin-safe grouped split: 70/15/15 train/val/test by (band, game index); bands 1300 and 1700 and substitution rate 10 percent withheld from training entirely (split seed 42)",
+  "config": {
+    "n_estimators": 2000,
+    "learning_rate": 0.02,
+    "num_leaves": 31,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "reg_lambda": 1.0,
+    "min_child_samples": 30,
+    "scale_pos_weight": "n_neg/n_pos on train",
+    "random_state": 42,
+    "early_stopping": "100 rounds on validation AUC"
+  },
+  "headline_auc": {
+    "seen": {
+      "auc": 0.6883,
+      "ci95": [
+        0.6821,
+        0.6952
+      ],
+      "n": 27000
+    },
+    "withheld_band": {
+      "auc": 0.6876,
+      "ci95": [
+        0.6828,
+        0.6914
+      ],
+      "n": 52000
+    },
+    "withheld_rate_vs_clean": {
+      "auc": 0.62,
+      "ci95": [
+        0.6147,
+        0.6252
+      ],
+      "n": 48200
+    },
+    "withheld_both": {
+      "auc": 0.6493,
+      "ci95": [
+        0.6305,
+        0.6703
+      ],
+      "n": 8000
+    },
+    "withheld_band_rate02_vs_clean": {
+      "auc": 0.5387,
+      "ci95": [
+        0.5282,
+        0.5496
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate05_vs_clean": {
+      "auc": 0.565,
+      "ci95": [
+        0.5558,
+        0.5749
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate20_vs_clean": {
+      "auc": 0.6614,
+      "ci95": [
+        0.6531,
+        0.6697
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate40_vs_clean": {
+      "auc": 0.7613,
+      "ci95": [
+        0.7544,
+        0.7686
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate60_vs_clean": {
+      "auc": 0.8111,
+      "ci95": [
+        0.8045,
+        0.8179
+      ],
+      "n": 16000
+    },
+    "strength_check": {
+      "auc": 0.5308,
+      "definition": "AUC(hard-negative vs rate 0), test + heldout_band"
+    }
+  },
+  "features": [
+    "abs_first_diff_all_max",
+    "abs_first_diff_all_mean",
+    "abs_first_diff_all_p90",
+    "abs_first_diff_all_p99",
+    "abs_first_diff_all_std",
+    "abs_first_diff_sus_max",
+    "abs_first_diff_sus_mean",
+    "abs_first_diff_sus_p90",
+    "abs_first_diff_sus_p99",
+    "abs_first_diff_sus_std",
+    "abs_second_diff_all_max",
+    "abs_second_diff_all_mean",
+    "abs_second_diff_all_p90",
+    "abs_second_diff_all_p99",
+    "abs_second_diff_all_std",
+    "abs_second_diff_sus_max",
+    "abs_second_diff_sus_mean",
+    "abs_second_diff_sus_p90",
+    "abs_second_diff_sus_p99",
+    "abs_second_diff_sus_std",
+    "alphad_all_max",
+    "alphad_all_mean",
+    "alphad_all_p90",
+    "alphad_all_p99",
+    "alphad_all_std",
+    "alphad_sus_max",
+    "alphad_sus_mean",
+    "alphad_sus_p90",
+    "alphad_sus_p99",
+    "alphad_sus_std",
+    "clock_delta_all_max",
+    "clock_delta_all_mean",
+    "clock_delta_all_p90",
+    "clock_delta_all_p99",
+    "clock_delta_all_std",
+    "clock_delta_sus_max",
+    "clock_delta_sus_mean",
+    "clock_delta_sus_p90",
+    "clock_delta_sus_p99",
+    "clock_delta_sus_std",
+    "clock_remaining_all_max",
+    "clock_remaining_all_mean",
+    "clock_remaining_all_p90",
+    "clock_remaining_all_p99",
+    "clock_remaining_all_std",
+    "clock_remaining_sus_max",
+    "clock_remaining_sus_mean",
+    "clock_remaining_sus_p90",
+    "clock_remaining_sus_p99",
+    "clock_remaining_sus_std",
+    "d_t_all_max",
+    "d_t_all_mean",
+    "d_t_all_p90",
+    "d_t_all_p99",
+    "d_t_all_std",
+    "d_t_lastq_mean",
+    "d_t_sus_max",
+    "d_t_sus_mean",
+    "d_t_sus_p90",
+    "d_t_sus_p99",
+    "d_t_sus_std",
+    "frac_capture",
+    "frac_check",
+    "material_balance_all_max",
+    "material_balance_all_mean",
+    "material_balance_all_p90",
+    "material_balance_all_p99",
+    "material_balance_all_std",
+    "material_balance_sus_max",
+    "material_balance_sus_mean",
+    "material_balance_sus_p90",
+    "material_balance_sus_p99",
+    "material_balance_sus_std",
+    "n_plies",
+    "n_suspect_moves",
+    "r_hat_final",
+    "r_hat_suspect_all_max",
+    "r_hat_suspect_all_mean",
+    "r_hat_suspect_all_p90",
+    "r_hat_suspect_all_p99",
+    "r_hat_suspect_all_std",
+    "r_hat_suspect_sus_max",
+    "r_hat_suspect_sus_mean",
+    "r_hat_suspect_sus_p90",
+    "r_hat_suspect_sus_p99",
+    "r_hat_suspect_sus_std",
+    "run_std_all_max",
+    "run_std_all_mean",
+    "run_std_all_p90",
+    "run_std_all_p99",
+    "run_std_all_std",
+    "run_std_final",
+    "run_std_sus_max",
+    "run_std_sus_mean",
+    "run_std_sus_p90",
+    "run_std_sus_p99",
+    "run_std_sus_std"
+  ],
+  "features_note": "column order of the booster (sorted pooled feature names); inference runs through src/lgbm_detector.py's own tree walker, not the lightgbm package"
+}

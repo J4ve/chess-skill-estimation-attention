@@ -176,20 +176,22 @@ def _traj_features(series: np.ndarray):
     return run_mean, run_std, first_diff, second_diff
 
 
-def build_features(
+def per_ply_arrays(
     per_move_preds: np.ndarray,
     attention: np.ndarray | None,
     moves_uci: Sequence[str],
     clock_seconds: Sequence[float],
     suspect_idx: int,
     baseline: float,
-) -> np.ndarray:
-    """Raw (unstandardized) (n_plies, 17) float32 feature matrix for one side.
+) -> dict[str, np.ndarray]:
+    """Per-ply float32 arrays for one side, exactly as ``rating_cheap.npz`` holds them.
 
     ``per_move_preds`` is the rating model's (n, 2) output on the Elo scale
     (float32, as the model produces it), ``attention`` its (n,) attention
     weights, ``clock_seconds`` the remaining clock per ply. Only the first
-    ``MAX_PLIES`` plies are used, as in training.
+    ``MAX_PLIES`` plies are used, as in training. Shared by this detector's
+    ply matrix and the LightGBM detector's pooled features
+    (``lgbm_detector.pool_game``).
     """
     preds = np.asarray(per_move_preds, dtype=np.float32)[:MAX_PLIES]
     n = preds.shape[0]
@@ -214,8 +216,7 @@ def build_features(
         if clkrem[t - 2] > 0 and clkrem[t] > 0:
             clkdelta[t] = clkrem[t - 2] - clkrem[t]
 
-    # Stored as float32 per-ply arrays first, exactly as rating_cheap.npz holds them.
-    pp = {
+    return {
         "r_hat_suspect": rhat_s.astype(np.float32),
         "r_hat_other": rhat_o.astype(np.float32),
         "alpha": attn.astype(np.float32),
@@ -232,6 +233,22 @@ def build_features(
         "is_suspect_move": is_sus,
         "ply_idx": np.arange(n, dtype=np.int32),
     }
+
+
+def build_features(
+    per_move_preds: np.ndarray,
+    attention: np.ndarray | None,
+    moves_uci: Sequence[str],
+    clock_seconds: Sequence[float],
+    suspect_idx: int,
+    baseline: float,
+) -> np.ndarray:
+    """Raw (unstandardized) (n_plies, 17) float32 feature matrix for one side.
+
+    Arguments as ``per_ply_arrays``.
+    """
+    pp = per_ply_arrays(per_move_preds, attention, moves_uci, clock_seconds, suspect_idx, baseline)
+    n = len(pp["ply_idx"])
     band = np.float32(baseline)
     nply = np.float32(n)
     cd = pp["clock_delta"].astype(np.float32)

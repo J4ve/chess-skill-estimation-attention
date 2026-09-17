@@ -1,0 +1,254 @@
+[
+ {
+  "kind": "sample",
+  "source": "blitz_best_predicted.pgn",
+  "side": "white",
+  "gid": "1754_none_r00/game_00000.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "blitz_best_predicted.pgn",
+  "side": "black",
+  "gid": "1754_none_r00/game_00001.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "blitz_typical.pgn",
+  "side": "white",
+  "gid": "1551_none_r00/game_00002.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "blitz_typical.pgn",
+  "side": "black",
+  "gid": "1472_none_r00/game_00003.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "blitz_worst_predicted.pgn",
+  "side": "white",
+  "gid": "2827_none_r00/game_00004.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "blitz_worst_predicted.pgn",
+  "side": "black",
+  "gid": "2748_none_r00/game_00005.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "bullet_best_predicted.pgn",
+  "side": "white",
+  "gid": "1500_none_r00/game_00006.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "bullet_best_predicted.pgn",
+  "side": "black",
+  "gid": "1500_none_r00/game_00007.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "bullet_typical.pgn",
+  "side": "white",
+  "gid": "2617_none_r00/game_00008.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "bullet_typical.pgn",
+  "side": "black",
+  "gid": "2679_none_r00/game_00009.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "bullet_worst_predicted.pgn",
+  "side": "white",
+  "gid": "1583_none_r00/game_00010.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "bullet_worst_predicted.pgn",
+  "side": "black",
+  "gid": "1502_none_r00/game_00011.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "rapid_best_predicted.pgn",
+  "side": "white",
+  "gid": "1520_none_r00/game_00012.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "rapid_best_predicted.pgn",
+  "side": "black",
+  "gid": "1519_none_r00/game_00013.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "rapid_typical.pgn",
+  "side": "white",
+  "gid": "1378_none_r00/game_00014.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "rapid_typical.pgn",
+  "side": "black",
+  "gid": "1346_none_r00/game_00015.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "rapid_worst_predicted.pgn",
+  "side": "white",
+  "gid": "2744_none_r00/game_00016.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "rapid_worst_predicted.pgn",
+  "side": "black",
+  "gid": "3030_none_r00/game_00017.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_caught.pgn",
+  "side": "white",
+  "gid": "1100_none_r00/game_00018.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_caught.pgn",
+  "side": "black",
+  "gid": "1100_none_r00/game_00019.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_false_alarm.pgn",
+  "side": "white",
+  "gid": "1300_none_r00/game_00020.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_false_alarm.pgn",
+  "side": "black",
+  "gid": "1300_none_r00/game_00021.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_false_alarm_v2.pgn",
+  "side": "white",
+  "gid": "1700_none_r00/game_00022.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_false_alarm_v2.pgn",
+  "side": "black",
+  "gid": "1700_none_r00/game_00023.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_missed.pgn",
+  "side": "white",
+  "gid": "1700_none_r00/game_00024.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_missed.pgn",
+  "side": "black",
+  "gid": "1700_none_r00/game_00025.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_missed_v2.pgn",
+  "side": "white",
+  "gid": "1300_none_r00/game_00026.pkl"
+ },
+ {
+  "kind": "sample",
+  "source": "synthetic_missed_v2.pgn",
+  "side": "black",
+  "gid": "1300_none_r00/game_00027.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1600_stockfish16_r00__game_00291.pgn",
+  "side": "black",
+  "orig_gid": "1600_stockfish16_r00/game_00291.pkl",
+  "gid": "1600_stockfish16_r00/game_00028.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1500_lc0_r00__game_01825.pgn",
+  "side": "white",
+  "orig_gid": "1500_lc0_r00/game_01825.pkl",
+  "gid": "1500_lc0_r00/game_00029.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1200_lc0_r60__game_00606.pgn",
+  "side": "black",
+  "orig_gid": "1200_lc0_r60/game_00606.pkl",
+  "gid": "1200_lc0_r60/game_00030.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1300_stockfish16_r02__game_00002.pgn",
+  "side": "white",
+  "orig_gid": "1300_stockfish16_r02/game_00002.pkl",
+  "gid": "1300_stockfish16_r02/game_00031.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1300_stockfish16_r05__game_01202.pgn",
+  "side": "white",
+  "orig_gid": "1300_stockfish16_r05/game_01202.pkl",
+  "gid": "1300_stockfish16_r05/game_00032.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1700_lc0_r40__game_01002.pgn",
+  "side": "black",
+  "orig_gid": "1700_lc0_r40/game_01002.pkl",
+  "gid": "1700_lc0_r40/game_00033.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1500_hardneg__game_01480.pgn",
+  "side": "white",
+  "orig_gid": "1500_hardneg/game_01480.pkl",
+  "gid": "1500_hardneg/game_00034.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1300_lc0_r20__game_01178.pgn",
+  "side": "white",
+  "orig_gid": "1300_lc0_r20/game_01178.pkl",
+  "gid": "1300_lc0_r20/game_00035.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1600_lc0_r60__game_01598.pgn",
+  "side": "black",
+  "orig_gid": "1600_lc0_r60/game_01598.pkl",
+  "gid": "1600_lc0_r60/game_00036.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1500_lc0_r40__game_00675.pgn",
+  "side": "white",
+  "orig_gid": "1500_lc0_r40/game_00675.pkl",
+  "gid": "1500_lc0_r40/game_00037.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1300_stockfish16_r10__game_00002.pgn",
+  "side": "white",
+  "orig_gid": "1300_stockfish16_r10/game_00002.pkl",
+  "gid": "1300_stockfish16_r10/game_00038.pkl"
+ },
+ {
+  "kind": "corpus",
+  "source": "1300_lc0_r10__game_01307.pgn",
+  "side": "white",
+  "orig_gid": "1300_lc0_r10/game_01307.pkl",
+  "gid": "1300_lc0_r10/game_00039.pkl"
+ }
+]
