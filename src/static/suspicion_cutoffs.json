@@ -1,54 +1,57 @@
 {
+  "schema_note": "One entry per suspicion-score method, keyed by method id. Each entry names its own score in \"score\"; api._load_method_cutoffs ignores an entry whose score does not match its key.",
+  "generated_date": "2026-09-17",
   "methods": {
     "s_att": {
       "score": "s_att",
+      "score_description": "Computed score S_att (first method tried): attention-weighted mean absolute gap, in rating points, between the rating model's per-move estimate and the side's baseline. No trained parameters.",
       "generated_date": "2026-09-17",
       "checkpoint": "models/preflight_check_2m/best_model.pth",
       "checkpoint_md5": "fcb38b8a6a3ee04a6b1859dd5bc69b75",
       "provisional": false,
-      "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 600 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies). 2,536 games (5,072 sides) scored on CPU with the exact model + AnomalyDetector code path the RatingNet web prototype uses. The model never trained on these games. Completes the run that produced the original provisional file (stopped early on 2026-09-15 at 1,200 games) at the same seed, so the first 1,200 games' scores are unchanged.",
-      "note": "These cutoffs describe how S_att is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: in thesis evaluation S_att separated engine-substituted synthetic games only weakly (ROC-AUC 0.555), and a clean synthetic game scored 1097 on this same scale.",
+      "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 700 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies): the same 2822 games (5644 sides) for all four methods, reused from the per-move detector's cutoffs run rather than re-sampled. Scored on CPU with the prototype's own code and the frozen rating checkpoint, each side as the suspect against its PGN-header rating. The rating model never trained on these games, and the trained detectors trained only on synthetic games.",
+      "note": "These cutoffs describe how S_att is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: S_att separated engine-substituted synthetic games at about chance (ROC-AUC about 0.51 on rating bands withheld from training).",
       "bootstrap_resamples": 2000,
       "min_sides_for_time_control_cutoff": 300,
       "overall": {
-        "n_sides": 5072,
-        "p75": 382.17,
+        "n_sides": 5644,
+        "p75": 379.27,
         "p75_ci": [
-          373.12,
-          390.7
+          372.19,
+          386.67
         ],
-        "p95": 634.11,
+        "p95": 629.16,
         "p95_ci": [
-          617.89,
-          647.34
+          615.59,
+          642.68
         ]
       },
       "by_time_control": {
         "blitz": {
-          "n_sides": 1142,
-          "p75": 367.88,
+          "n_sides": 1330,
+          "p75": 364.37,
           "p75_ci": [
-            354.07,
-            381.21
+            351.09,
+            374.45
           ],
-          "p95": 591.64,
+          "p95": 590.8,
           "p95_ci": [
-            572.45,
-            624.84
+            568.93,
+            617.99
           ],
           "use_overall": false
         },
         "bullet": {
-          "n_sides": 1148,
-          "p75": 297.91,
+          "n_sides": 1346,
+          "p75": 306.36,
           "p75_ci": [
-            289.34,
-            318.2
+            294.9,
+            328.17
           ],
-          "p95": 524.38,
+          "p95": 526.81,
           "p95_ci": [
-            474.89,
-            556.27
+            487.43,
+            558.12
           ],
           "use_overall": false
         },
@@ -56,27 +59,27 @@
           "n_sides": 1230,
           "p75": 419.51,
           "p75_ci": [
-            404.02,
-            439.31
+            404.76,
+            439.48
           ],
           "p95": 678.49,
           "p95_ci": [
-            644.53,
-            704.04
+            646.56,
+            704.02
           ],
           "use_overall": false
         },
         "rapid": {
-          "n_sides": 1120,
-          "p75": 413.92,
+          "n_sides": 1306,
+          "p75": 410.57,
           "p75_ci": [
-            397.18,
-            428.61
+            395.49,
+            425.85
           ],
-          "p95": 662.12,
+          "p95": 661.36,
           "p95_ci": [
-            634.65,
-            705.9
+            636.21,
+            693.67
           ],
           "use_overall": false
         },
@@ -85,12 +88,111 @@
           "p75": 408.87,
           "p75_ci": [
             386.69,
-            439.33
+            441.69
           ],
           "p95": 633.99,
           "p95_ci": [
-            600.27,
+            601.15,
             680.66
+          ],
+          "use_overall": false
+        }
+      }
+    },
+    "lgbm_a0g": {
+      "score": "lgbm_a0g",
+      "score_description": "Trained LightGBM detector (thesis arm A0g): game-level output in [0, 1] per side from 97 pooled per-game features.",
+      "generated_date": "2026-09-17",
+      "detector_model": "src/models/detector_lgbm_a0g.txt",
+      "detector_model_md5": "3ae8f9d5766a09fe15fd167ada2a1f9f",
+      "checkpoint": "models/preflight_check_2m/best_model.pth",
+      "checkpoint_md5": "fcb38b8a6a3ee04a6b1859dd5bc69b75",
+      "provisional": false,
+      "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 700 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies): the same 2822 games (5644 sides) for all four methods, reused from the per-move detector's cutoffs run rather than re-sampled. Scored on CPU with the prototype's own code and the frozen rating checkpoint, each side as the suspect against its PGN-header rating. The rating model never trained on these games, and the trained detectors trained only on synthetic games.",
+      "note": "These cutoffs describe how the LightGBM detector score is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: on synthetic games from rating bands withheld from training it reached ROC-AUC about 0.69, and about 0.54 and 0.57 when 2 and 5 percent of moves were engine moves.",
+      "bootstrap_resamples": 2000,
+      "min_sides_for_time_control_cutoff": 300,
+      "overall": {
+        "n_sides": 5644,
+        "p75": 0.5807,
+        "p75_ci": [
+          0.5741,
+          0.5884
+        ],
+        "p95": 0.7656,
+        "p95_ci": [
+          0.7587,
+          0.7723
+        ]
+      },
+      "by_time_control": {
+        "blitz": {
+          "n_sides": 1330,
+          "p75": 0.5555,
+          "p75_ci": [
+            0.5438,
+            0.5747
+          ],
+          "p95": 0.7393,
+          "p95_ci": [
+            0.7245,
+            0.7708
+          ],
+          "use_overall": false
+        },
+        "bullet": {
+          "n_sides": 1346,
+          "p75": 0.5994,
+          "p75_ci": [
+            0.5877,
+            0.6125
+          ],
+          "p95": 0.781,
+          "p95_ci": [
+            0.7703,
+            0.7997
+          ],
+          "use_overall": false
+        },
+        "classical": {
+          "n_sides": 1230,
+          "p75": 0.5712,
+          "p75_ci": [
+            0.5489,
+            0.5839
+          ],
+          "p95": 0.748,
+          "p95_ci": [
+            0.7308,
+            0.7626
+          ],
+          "use_overall": false
+        },
+        "rapid": {
+          "n_sides": 1306,
+          "p75": 0.5521,
+          "p75_ci": [
+            0.5399,
+            0.5747
+          ],
+          "p95": 0.7499,
+          "p95_ci": [
+            0.7333,
+            0.7623
+          ],
+          "use_overall": false
+        },
+        "ultrabullet": {
+          "n_sides": 432,
+          "p75": 0.6789,
+          "p75_ci": [
+            0.6611,
+            0.7017
+          ],
+          "p95": 0.8145,
+          "p95_ci": [
+            0.7888,
+            0.8255
           ],
           "use_overall": false
         }
@@ -98,14 +200,14 @@
     },
     "detector_a3g_seed0": {
       "score": "detector_a3g_seed0",
-      "score_description": "Trained per-move detector (thesis arm A3g, seed 0): game-level output in [0, 1] per side. Not the computed attention-weighted score S_att, whose cutoffs live in suspicion_cutoffs_s_att.json.",
+      "score_description": "Trained per-move detector (thesis arm A3g, seed 0): game-level output in [0, 1] per side.",
       "generated_date": "2026-09-17",
       "detector_weights": "src/models/detector_a3g_seed0.pt",
       "detector_weights_md5": "05dd93a10b62e5c8f9195535294762fa",
       "checkpoint": "models/preflight_check_2m/best_model.pth",
       "checkpoint_md5": "fcb38b8a6a3ee04a6b1859dd5bc69b75",
       "provisional": false,
-      "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 700 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies). 2822 games (5644 sides) scored on CPU with the prototype's own src/detector.py and the frozen rating checkpoint, each side as the suspect against its PGN-header rating. The rating model never trained on these games, and the detector trained only on synthetic games.",
+      "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 700 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies): the same 2822 games (5644 sides) for all four methods, reused from the per-move detector's cutoffs run rather than re-sampled. Scored on CPU with the prototype's own code and the frozen rating checkpoint, each side as the suspect against its PGN-header rating. The rating model never trained on these games, and the trained detectors trained only on synthetic games.",
       "note": "These cutoffs describe how the detector score is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: the detector reached ROC-AUC about 0.75 on synthetic games from rating bands withheld from training, but only about 0.58 and 0.61 when 2 and 5 percent of moves were engine moves.",
       "bootstrap_resamples": 2000,
       "min_sides_for_time_control_cutoff": 300,
@@ -190,6 +292,105 @@
           "p95_ci": [
             0.7873,
             0.8675
+          ],
+          "use_overall": false
+        }
+      }
+    },
+    "cnn_bilstm_a4": {
+      "score": "cnn_bilstm_a4",
+      "score_description": "Trained full CNN-BiLSTM detector (thesis arm A4): game-level output in [0, 1] per side, read from the board positions and clocks.",
+      "generated_date": "2026-09-17",
+      "detector_weights": "src/models/detector_cnn_bilstm_a4.pt",
+      "detector_weights_md5": "c5a4b8ca9fb347747d47eb5721b8871b",
+      "checkpoint": "models/preflight_check_2m/best_model.pth",
+      "checkpoint_md5": "fcb38b8a6a3ee04a6b1859dd5bc69b75",
+      "provisional": false,
+      "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 700 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies): the same 2822 games (5644 sides) for all four methods, reused from the per-move detector's cutoffs run rather than re-sampled. Scored on CPU with the prototype's own code and the frozen rating checkpoint, each side as the suspect against its PGN-header rating. The rating model never trained on these games, and the trained detectors trained only on synthetic games.",
+      "note": "These cutoffs describe how the CNN-BiLSTM detector score is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: on synthetic games from rating bands withheld from training it reached ROC-AUC about 0.70, and about 0.55 and 0.57 when 2 and 5 percent of moves were engine moves.",
+      "bootstrap_resamples": 2000,
+      "min_sides_for_time_control_cutoff": 300,
+      "overall": {
+        "n_sides": 5644,
+        "p75": 0.6275,
+        "p75_ci": [
+          0.6186,
+          0.6371
+        ],
+        "p95": 0.8111,
+        "p95_ci": [
+          0.8033,
+          0.8192
+        ]
+      },
+      "by_time_control": {
+        "blitz": {
+          "n_sides": 1330,
+          "p75": 0.6115,
+          "p75_ci": [
+            0.5935,
+            0.626
+          ],
+          "p95": 0.8074,
+          "p95_ci": [
+            0.7867,
+            0.8234
+          ],
+          "use_overall": false
+        },
+        "bullet": {
+          "n_sides": 1346,
+          "p75": 0.5988,
+          "p75_ci": [
+            0.579,
+            0.6115
+          ],
+          "p95": 0.7826,
+          "p95_ci": [
+            0.7622,
+            0.8012
+          ],
+          "use_overall": false
+        },
+        "classical": {
+          "n_sides": 1230,
+          "p75": 0.6796,
+          "p75_ci": [
+            0.6545,
+            0.6978
+          ],
+          "p95": 0.8345,
+          "p95_ci": [
+            0.8246,
+            0.8488
+          ],
+          "use_overall": false
+        },
+        "rapid": {
+          "n_sides": 1306,
+          "p75": 0.6235,
+          "p75_ci": [
+            0.6099,
+            0.6407
+          ],
+          "p95": 0.7904,
+          "p95_ci": [
+            0.7734,
+            0.8111
+          ],
+          "use_overall": false
+        },
+        "ultrabullet": {
+          "n_sides": 432,
+          "p75": 0.666,
+          "p75_ci": [
+            0.6275,
+            0.7053
+          ],
+          "p95": 0.8317,
+          "p95_ci": [
+            0.805,
+            0.8576
           ],
           "use_overall": false
         }

@@ -1,5 +1,10 @@
 # Detector score cutoffs (2026-09-17)
 
+> Superseded on 2026-09-17 by `experiments/method_cutoffs/`: the combined
+> `src/static/suspicion_cutoffs.json` now holds these per-move detector cutoffs
+> (unchanged) alongside the other three methods, and `suspicion_cutoffs_s_att.json`
+> is gone.
+
 Cutoffs for the trained detector's Typical / Unusual / Highly unusual labels,
 written to `src/static/suspicion_cutoffs.json` (`"score": "detector_a3g_seed0"`).
 The computed score S_att keeps its own, still provisional, cutoffs in

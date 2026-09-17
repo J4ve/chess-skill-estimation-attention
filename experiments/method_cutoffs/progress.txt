@@ -1,0 +1,18 @@
+14:19:30 starting
+14:19:30 reference games: 2822
+14:19:30 models loaded
+14:19:52 scored 200 elapsed=22s max|A3g - reference|=5.00e-07
+14:20:12 scored 400 elapsed=42s max|A3g - reference|=5.00e-07
+14:20:28 scored 600 elapsed=58s max|A3g - reference|=5.00e-07
+14:20:42 scored 800 elapsed=72s max|A3g - reference|=5.00e-07
+14:20:58 scored 1000 elapsed=88s max|A3g - reference|=5.00e-07
+14:21:19 scored 1200 elapsed=109s max|A3g - reference|=5.00e-07
+14:21:40 scored 1400 elapsed=130s max|A3g - reference|=5.00e-07
+14:22:01 scored 1600 elapsed=151s max|A3g - reference|=5.00e-07
+14:22:21 scored 1800 elapsed=171s max|A3g - reference|=5.00e-07
+14:22:43 scored 2000 elapsed=193s max|A3g - reference|=5.00e-07
+14:23:01 scored 2200 elapsed=211s max|A3g - reference|=5.00e-07
+14:23:22 scored 2400 elapsed=232s max|A3g - reference|=5.00e-07
+14:23:41 scored 2600 elapsed=251s max|A3g - reference|=5.00e-07
+14:23:55 scored 2800 elapsed=265s max|A3g - reference|=5.00e-07
+14:23:57 DONE games=2822 errors={} max|A3g - reference|=5.00e-07
