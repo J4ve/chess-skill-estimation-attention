@@ -942,12 +942,17 @@ function formatAuc(value) {
   return typeof value === "number" ? value.toFixed(3) : "?";
 }
 
-function methodCaption(method) {
+// Short form for the one-line caption under the dropdown (the card has little
+// vertical room at 768px); the long form goes in the method popover.
+function methodCaption(method, long = false) {
   const auc = method.auc || {};
-  return (
-    `ROC-AUC ${formatAuc(auc.withheld_band)} on rating bands never seen in training; ` +
-    `${formatAuc(auc.rate60)} when 60% of moves are engine moves`
-  );
+  if (long) {
+    return (
+      `ROC-AUC ${formatAuc(auc.withheld_band)} on rating bands never seen in training; ` +
+      `${formatAuc(auc.rate60)} when 60% of moves are engine moves`
+    );
+  }
+  return `ROC-AUC ${formatAuc(auc.withheld_band)} on unseen rating bands, ${formatAuc(auc.rate60)} at 60% engine moves`;
 }
 
 function methodInfoText(method) {
@@ -978,7 +983,7 @@ function applySuspicionMethodInfo() {
     METRIC_INFO.computedScore.text = `${methodInfoText(sAtt)} Its labels use its own cutoffs.`;
   }
   const list = SUSPICION_METHOD_IDS.filter((id) => table.methods[id])
-    .map((id) => `${table.methods[id].label}: ${methodCaption(table.methods[id])}.`)
+    .map((id) => `${table.methods[id].label}: ${methodCaption(table.methods[id], true)}.`)
     .join(" ");
   METRIC_INFO.suspicionMethod.text =
     "Four ways of scoring the same game, all computed from one run of the rating model, so switching does not " +
@@ -988,7 +993,9 @@ function applySuspicionMethodInfo() {
 
 function renderSuspicionMethodCaption() {
   const method = state.suspicionMethods && state.suspicionMethods.methods[state.suspicionMethod];
-  $("suspicion-method-caption").textContent = method ? methodCaption(method) : "";
+  const caption = $("suspicion-method-caption");
+  caption.textContent = method ? methodCaption(method) : "";
+  caption.title = method ? methodCaption(method, true) : "";
 }
 
 function setSuspicionMethod(methodId) {
