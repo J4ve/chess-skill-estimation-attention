@@ -1415,7 +1415,13 @@ body:has(#results-panel[hidden]) .tab-panel.samples-panel {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 0;
+  /* overflow: hidden below already zeroes the flex-item automatic minimum
+     size (it only defaults to min-content when overflow is visible), so a
+     zone can otherwise shrink smaller than its own label needs. Force
+     min-content back so a squeezed zone borrows space from its siblings
+     instead of clipping its label; renderSuspicionScale() overrides this
+     to 0 for zones meant to collapse fully (the no-cutoffs fallback). */
+  min-width: min-content;
   overflow: hidden;
   transition: flex-basis 0.3s ease;
 }

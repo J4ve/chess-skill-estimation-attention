@@ -993,7 +993,9 @@ function renderSuspicionScale(prefix, score, label, cutoffs, provisional, fixedS
     marker.hidden = true;
     zoneTypical.style.flexBasis = "100%";
     zoneUnusual.style.flexBasis = "0%";
+    zoneUnusual.style.minWidth = "0";
     zoneHighlyUnusual.style.flexBasis = "0%";
+    zoneHighlyUnusual.style.minWidth = "0";
     renderSuspicionLabelChip(prefix, label, provisional);
     return;
   }
@@ -1007,7 +1009,9 @@ function renderSuspicionScale(prefix, score, label, cutoffs, provisional, fixedS
 
   zoneTypical.style.flexBasis = `${typicalPct}%`;
   zoneUnusual.style.flexBasis = `${unusualPct}%`;
+  zoneUnusual.style.minWidth = "";
   zoneHighlyUnusual.style.flexBasis = `${highlyUnusualPct}%`;
+  zoneHighlyUnusual.style.minWidth = "";
 
   marker.hidden = false;
   marker.style.left = `${clampPct((score / scaleMax) * 100)}%`;
