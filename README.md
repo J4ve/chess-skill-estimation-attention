@@ -17,6 +17,10 @@ Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_th
 
 ## The app
 
+Following a live Lichess TV game, switching suspicion methods mid-game:
+
+![Demo: following a live game, switching suspicion methods](docs/screenshots/demo.gif)
+
 ![Analysis view, light theme](docs/screenshots/analysis-light.png)
 
 The same view in dark theme, and the sample-game picker:
@@ -44,6 +48,10 @@ The same view in dark theme, and the sample-game picker:
   | Full model (CNN-BiLSTM) | `src/cnn_bilstm_detector.py`, A4 | 0.705 | 0.547 | 0.838 |
 
   ![Suspicion card](docs/screenshots/suspicion-card.png)
+
+  The Method dropdown open, showing all four choices:
+
+  ![Suspicion method dropdown open](docs/screenshots/method-selector.png)
 
 - **Typical / Unusual / Highly unusual labels**, from each method's own
   percentile cutoffs over the same 2,822 ordinary held-out test games, per
