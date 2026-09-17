@@ -6,9 +6,9 @@ with a deeper CNN, an attention mechanism, a move-level anomaly-detection
 module, and a real-time web prototype for human fair-play review.
 
 The prototype estimates each player's rating move by move from board states
-and clock times, and gives each side a suspicion score from a trained
-detector, as a pointer for a human reviewer. It takes a PGN, a Lichess game
-ID, a built-in sample game, or a live ongoing Lichess game.
+and clock times, and gives each side a suspicion score, from any of four
+methods the thesis tried, as a pointer for a human reviewer. It takes a PGN, a
+Lichess game ID, a built-in sample game, or a live ongoing Lichess game.
 
 **Based on the baseline paper:** *Chess Rating Estimation from Moves and Clock
 Times Using a CNN-LSTM* by Michael Omori and Prasad Tadepalli (Oregon State
@@ -30,21 +30,28 @@ The same view in dark theme, and the sample-game picker:
 - **Rating estimate per move** (`src/chess_rating_net.py`, `src/attention.py`):
   a CNN-BiLSTM with causal-cumulative Bahdanau attention. The API serves the
   frozen thesis checkpoint: the tuned-attention arm, test MAE 171.92.
-- **Suspicion score per side** (`src/detector.py`, weights in `src/models/`):
-  a trained BiGRU (thesis arm A3g) over the rating model's per-move outputs,
-  scoring each side from 0 to 1. ROC-AUC 0.752 on synthetic games from rating
-  bands withheld from training, falling to 0.576 and 0.606 when only 2 and 5
-  percent of moves are engine moves. The parameter-free attention-weighted
-  score S_att (`src/anomaly.py`, ROC-AUC 0.555) stays as the first method
-  tried, on a secondary line.
+- **Suspicion score per side, four selectable methods** (weights in
+  `src/models/`). A Method dropdown on the suspicion card switches between
+  them for the loaded game without re-running the rating model, and remembers
+  the choice. ROC-AUC on synthetic games from rating bands withheld from
+  training (from `src/static/suspicion_methods.json`):
+
+  | Method (page label) | Code, thesis arm | Withheld bands | 2% engine moves | 60% engine moves |
+  | --- | --- | --- | --- | --- |
+  | Computed score (first method tried) | `src/anomaly.py`, S_att | 0.506 | 0.497 | 0.520 |
+  | Trained detector (LightGBM) | `src/lgbm_detector.py`, A0g | 0.688 | 0.539 | 0.811 |
+  | **Per-move detector (best, default)** | `src/detector.py`, A3g | **0.752** | 0.576 | 0.892 |
+  | Full model (CNN-BiLSTM) | `src/cnn_bilstm_detector.py`, A4 | 0.705 | 0.547 | 0.838 |
 
   ![Suspicion card](docs/screenshots/suspicion-card.png)
 
-- **Typical / Unusual / Highly unusual labels**, from percentile cutoffs over
-  2,822 ordinary held-out test games, per time control. A label says how
-  uncommon a score is among ordinary games, never that anyone cheated.
+- **Typical / Unusual / Highly unusual labels**, from each method's own
+  percentile cutoffs over the same 2,822 ordinary held-out test games, per
+  time control. A label says how uncommon a score is among ordinary games,
+  never that anyone cheated.
 - **Critical moves**: per side, the moves ranked highest by attention times
-  rating deviation, so a reviewer knows where to look first.
+  rating deviation, so a reviewer knows where to look first. This ranking
+  does not change with the selected method.
 - **Live mode**: follows an ongoing Lichess game (or Lichess TV) move by move
   over Server-Sent Events.
 - **Sample games**: held-out test games across time controls, plus synthetic
@@ -99,9 +106,10 @@ mkdir -p models/preflight_check_2m
 cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
 ```
 
-The trained suspicion detector is small and **is** committed, with its
-provenance, at `src/models/`. See [docs/development.md](docs/development.md)
-for the fallback checkpoint, submodule use, and the training path.
+The trained suspicion detectors (per-move, LightGBM, CNN-BiLSTM head) are
+small and **are** committed, with their provenance, at `src/models/`. See
+[docs/development.md](docs/development.md) for the fallback checkpoint,
+submodule use, and the training path.
 
 ## Documentation
 
@@ -113,9 +121,44 @@ for the fallback checkpoint, submodule use, and the training path.
 - [docs/development.md](docs/development.md) - weights, submodule use,
   training path, and the upstream baseline's own README.
 - [experiments/detector_parity/](experiments/detector_parity/) - the app's
-  detector path reproduces the thesis HPC code to within 6e-07.
-- [experiments/detector_cutoffs/](experiments/detector_cutoffs/) - how the
-  suspicion cutoffs were computed, with bootstrap CIs.
+  per-move detector path reproduces the thesis HPC code to within 6e-07.
+- [experiments/method_parity/](experiments/method_parity/) - the same check
+  for the LightGBM (4.8e-07) and CNN-BiLSTM (2.6e-05) ports.
+- [experiments/method_cutoffs/](experiments/method_cutoffs/) - how every
+  method's suspicion cutoffs were computed, with bootstrap CIs.
+
+## Tests
+
+```bash
+pytest tests/
+```
+
+needs no rating checkpoint and runs in a few seconds; it covers every scoring
+path against fixtures from the thesis HPC code, the cutoffs and label logic,
+and the method-switch response.
+
+**Regression suite (run after any model, detector or cutoffs change).**
+`tests/test_browser_regression.py` loads all 12 bundled samples under all 4
+suspicion methods (48 cases) in headless Chrome and checks for console errors,
+that the score and label render, and that each score matches its
+parity-checked value in `tests/regression/expected_sample_scores.json`. It is
+opt-in because it needs the checkpoint, Playwright and a Chrome binary:
+
+```bash
+pip install playwright
+RATINGNET_BROWSER_REGRESSION=1 \
+RATINGNET_CHECKPOINT=/path/to/best_model.pth \
+RATINGNET_CHROME=/path/to/chrome \
+pytest tests/test_browser_regression.py
+```
+
+It starts its own server on a free port (or set `RATINGNET_REGRESSION_URL` to
+test a running one); `RATINGNET_CHROME` can be left out if Playwright's own
+Chromium is installed (`playwright install chromium`). After a deliberate
+change (an arm swap, new cutoffs), regenerate the expected file with
+`experiments/method_parity/build_regression_expected.py` (for a new or
+re-trained detector, re-run its parity check first so the expected scores
+come from the HPC code path) and review the diff.
 
 ## Limitations
 
@@ -124,11 +167,12 @@ for the fallback checkpoint, submodule use, and the training path.
 > player automatically. See Barnes and Hernandez-Castro (2015) on the
 > false-positive risk of single-game move analysis.
 
-- **The detector learned from synthetic games only.** Its measured AUCs come
-  from Maia games with inserted engine moves, not from confirmed real
-  cheating cases, and it is weak when only a few moves are engine moves
-  (about 0.58 at 2 percent). Its per-move outputs do not locate the engine
-  moves, so the app does not use them.
+- **The trained detectors learned from synthetic games only.** Their measured
+  AUCs come from Maia games with inserted engine moves, not from confirmed
+  real cheating cases, and all are weak when only a few moves are engine
+  moves (0.54 to 0.58 at 2 percent). None of their per-move outputs locate
+  the engine moves, so the app does not use them. The four methods often
+  disagree on the same game.
 
 > **Mid-game values are provisional.** For an ongoing game (`Result` header
 > `*`), Lichess itself delays the export by a few moves, and any suspicion

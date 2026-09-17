@@ -17,12 +17,28 @@ the tuned attention arm (test MAE 171.92). It is **not committed** to git (see
   - Expected location: `models/model_55.pth`
   - Download: [Google Drive folder](https://drive.google.com/drive/folders/164qXisHsNAKSM6R7ZMeTeJjPpnZ7s5Rt)
 
-The trained suspicion detector is small (about 2.2 MB) and **is committed**:
-`src/models/detector_a3g_seed0.pt`, with `src/models/detector_a3g_seed0.json`
-recording its provenance (HPC source paths and script hashes, split, seed,
-training time, headline AUCs, the exact feature list and order, and the
-training-split standardization constants). If it is missing, the API serves
-S_att as the main score and says so in `warnings`.
+The trained suspicion detectors are small and **are committed**, each with a
+JSON provenance file next to it (HPC source paths and script hashes, split,
+seed, headline AUCs, and whatever the port needs, such as the exact feature
+list and standardization constants):
+
+- `src/models/detector_a3g_seed0.pt` (about 2.2 MB): the per-move detector,
+  the default method. If it is missing, the API serves S_att in the
+  top-level `*_suspicion_*` fields and says so in `warnings`.
+- `src/models/detector_lgbm_a0g.txt` (about 1.6 MB): the LightGBM detector as
+  a LightGBM text model, read by `src/lgbm_detector.py`'s own tree walker (no
+  `lightgbm` package needed). The thesis run kept no model file, so this is a
+  re-fit that reproduces every stored thesis score exactly; see
+  `experiments/method_parity/`.
+- `src/models/detector_cnn_bilstm_a4.pt` (about 1.6 MB): the CNN-BiLSTM
+  detector's BiLSTM, attention and head. Its CNN trunk is the served rating
+  checkpoint's own (frozen in training), so this method needs the thesis
+  checkpoint too.
+
+A missing LightGBM or CNN-BiLSTM file only makes that method unavailable
+(`"available": false` in `suspicion_methods`, "Not available on this server"
+on the page). Tests and the browser regression suite are described in the
+[README](../README.md#tests).
 
 ## Used as a submodule
 

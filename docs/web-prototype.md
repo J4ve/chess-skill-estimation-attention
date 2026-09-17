@@ -19,9 +19,9 @@ layout: on a 1080p screen the whole analysis fits without page scrolling.
 The left column is a board sized from the viewport height, with a player bar
 above and below (name, rating estimate, actual rating and error, clock box)
 and one row of controls. The right column holds a small header (players,
-Live/Ongoing chips, the hide-ratings switch, the glossary), the two suspicion
-bars, a move list that scrolls on its own, and a collapsible move-details
-grid. A short rating chart runs across the full width underneath. The page
+Live/Ongoing chips, the hide-ratings switch, the glossary), the suspicion
+card (method dropdown and two bars), a move list that scrolls on its own,
+and a collapsible move-details grid. A short rating chart runs across the full width underneath. The page
 text is kept to short labels; every explanation lives in the (i) popovers
 and the glossary. On narrow screens the columns stack (a dedicated phone
 layout is not built yet).
@@ -112,92 +112,113 @@ see [docs/api.md](api.md)) since the model has little context in the opening and
 early plies would otherwise dominate the list. The detector's own per-move
 logits are deliberately not used here: in thesis evaluation they located
 engine-substituted moves at or below chance (hit@1 about 0.19 against 0.24
-for random picks on withheld rating bands).
+for random picks on withheld rating bands), and so did the CNN-BiLSTM
+detector's, so critical moves stay the same whichever suspicion method is
+selected.
 
 ## Suspicion score
 
-The main suspicion number for each side is the **trained detector** (thesis
-arm A3g, seed 0; `src/detector.py`). A 2-layer BiGRU reads 17 engine-free
-features per ply for the first 100 plies: the rating model's estimate for
-both sides, the gap from the scored side's baseline, attention, running
-statistics of the estimate, captures, checks, material, and clock use. It
-pools per-ply logits over the scored side's moves with gated attention and
-outputs a score from 0 to 1. Each side is scored in turn against its own
-resolved baseline. The score ranks games; it is not a calibrated probability
-of cheating.
+The suspicion card shows one score per side from the method picked in its
+**Method** dropdown. All four are computed server-side from the same
+rating-model pass and returned together in `suspicion_methods` (see
+[docs/api.md](api.md)), so switching re-renders the card without another
+request. The choice is saved in `localStorage` (`ratingnet.suspicionMethod`,
+wrapped in try/catch; the per-move detector on first visit) and applies to
+live updates too. Under the dropdown, a one-line caption gives that method's
+own measured ROC-AUC on rating bands withheld from training and at 60 percent
+engine moves; the method (i) lists all four and notes that critical moves do
+not follow the selection. Captions and info text are built from
+`src/static/suspicion_methods.json`, which
+`experiments/method_table/build_method_table.py` generates from the model
+provenance files, so no number is typed into the page.
 
-Measured on the thesis's synthetic anomaly corpus v2 (twin-safe grouped
-split, `src/models/detector_a3g_seed0.json`): ROC-AUC 0.752 on rating bands
-withheld from training (0.688 for the LightGBM detector on the same split),
-0.576 and 0.606 when only 2 and 5 percent of moves were engine moves, and
-0.892 at 60 percent. The feature and model code is ported from the HPC
-scripts that trained it (`extract_detector_features_v2.py`,
-`extra_arm_a3.py`), and `experiments/detector_parity/` shows the app path
-reproducing that code to within 6e-07 on the 12 bundled samples and 8 corpus
-games.
+| Page label | Code (thesis arm) | What it reads | Scale |
+| --- | --- | --- | --- |
+| Computed score (first method tried) | `src/anomaly.py` (S_att) | attention and the per-move gap from baseline | rating points |
+| Trained detector (LightGBM) | `src/lgbm_detector.py` (A0g) | 97 whole-game summaries of the rating model's outputs, board and clock facts | 0 to 1 |
+| Per-move detector (best, default) | `src/detector.py` (A3g) | 17 per-ply features from the rating model's outputs, board and clock facts | 0 to 1 |
+| Full model (CNN-BiLSTM) | `src/cnn_bilstm_detector.py` (A4) | the board positions and clocks themselves | 0 to 1 |
 
-The **computed score S_att** (`src/anomaly.py`) was the first method tried:
-the attention-weighted average gap, in rating points, between the per-move
-estimate and the baseline, with no trained parameters. It separated
-engine-substituted synthetic games only weakly in thesis evaluation (ROC-AUC
-0.555). It stays on the page as one secondary line under the bars ("First
-method: computed S_att"), with its own labels, and in the API as
-`*_computed_score`.
+- **Computed score S_att** was the first method tried: the attention-weighted
+  average gap, in rating points, between the per-move estimate and the
+  baseline, with no trained parameters. On the synthetic corpus it separated
+  engine games at about chance (ROC-AUC 0.506 on withheld bands).
+- **LightGBM detector** (A0g): gradient-boosted trees over 97 pooled per-game
+  features (means, maxima, percentiles and spreads of deviation, attention
+  times deviation, the estimate, its jumps, material and clock use, for the
+  scored side and all plies). The thesis run saved no model file, so the
+  shipped model is a re-fit with the unchanged code, data and seed that
+  reproduces every stored thesis score exactly. Walked in pure Python, no
+  `lightgbm` package needed.
+- **Per-move detector** (A3g, seed 0), the default: a 2-layer BiGRU reads 17
+  engine-free features per ply for the first 100 plies (the rating model's
+  estimate for both sides, the gap from the scored side's baseline,
+  attention, running statistics of the estimate, captures, checks, material,
+  clock use) and pools per-ply logits over the scored side's moves with gated
+  attention. It measured best of the four on withheld bands (0.752).
+- **CNN-BiLSTM detector** (A4): the rating model's own frozen CNN embeds each
+  position; a fine-tuned copy of its BiLSTM and causal attention reads the
+  embeddings plus the clock, and a gated-attention head pools per-ply logits.
+  It trained on the v2 split, which is not twin-safe, so its withheld-band
+  result (0.705) is the fair comparison. It ignores the baseline.
+
+Each side is scored in turn as the suspect against its own resolved baseline.
+No score is a calibrated probability of cheating. Measured results for all
+four come from the thesis's synthetic anomaly corpus v2 (headline tables in
+the README and in each `src/models/*.json`). Each trained method's port
+reproduces its HPC code path: `experiments/detector_parity/` (per-move,
+6e-07) and `experiments/method_parity/` (LightGBM 4.8e-07, CNN-BiLSTM
+2.6e-05).
 
 ## Suspicion labels
 
-Next to each suspicion bar, a label chip classifies that side's detector
-score against percentile cutoffs computed from ordinary, finished, rated
-games in the thesis's held-out TEST-partition corpus (games the rating model
-never trained on): **Typical** (below the 75th percentile of those games),
-**Unusual** (75th to 95th percentile), or **Highly unusual: worth a human
-review** (above the 95th percentile). Each bar is a segmented scale, not a
-plain gradient: the track is split into green/amber/red zones sized from that
-side's resolved p75/p95 cutoffs, with the score shown as a needle marker (the
-number sits beside the chip). The detector's scale runs from 0 to 1. When the
-server falls back to S_att as the main score, its scale max is
+Next to each suspicion bar, a label chip classifies that side's score, under
+the selected method, against that method's own percentile cutoffs computed
+from ordinary, finished, rated games in the thesis's held-out TEST-partition
+corpus (games the rating model never trained on): **Typical** (below the 75th
+percentile of those games), **Unusual** (75th to 95th percentile), or **Highly
+unusual: worth a human review** (above the 95th percentile). Each bar is a
+segmented scale, not a plain gradient: the track is split into
+green/amber/red zones sized from that side's resolved p75/p95 cutoffs, with
+the score shown as a needle marker (the number sits beside the chip). The
+detectors' scale runs from 0 to 1; S_att's scale max is
 `max(score, 1.6 * p95)` so all three zones stay visible. The card header says
 "Review aid, not proof", and the label (i) explains the comparison against
 ordinary games. Cutoffs use the game's own time-control bucket
 (bullet/blitz/rapid/classical/ultrabullet, derived from the PGN `TimeControl`
 header) when that bucket has at least 300 sides scored; otherwise they fall
 back to the overall cutoff. The boundary logic is covered in
-`tests/test_suspicion_labels.py` and `tests/test_detector.py`.
+`tests/test_suspicion_labels.py` and `tests/test_suspicion_methods.py`.
 
-Each score has its own cutoffs file, and each file names its score in a
-`score` field; the API ignores a file whose `score` does not match, so the two
-distributions can never be mixed up:
-
-- `src/static/suspicion_cutoffs.json` (`"score": "detector_a3g_seed0"`):
-  2,822 held-out test games (5,644 sides) from a stratified sample (up to
-  700 each for bullet, blitz and rapid, all available classical and
-  ultrabullet games), scored on the HPC CPU with this repo's own
-  `src/detector.py`. Overall p75 0.4805 and p95 0.8227; every time control
-  has its own cutoff. The full sample completed, so it is not provisional.
-  Method, table with bootstrap CIs, and the sample-game sanity check are in
-  `experiments/detector_cutoffs/README.md`.
-- `src/static/suspicion_cutoffs_s_att.json` (`"score": "s_att"`): the S_att
-  cutoffs. 2,536 held-out test games (5,072 sides) from the same stratified
-  sample as the detector cutoffs (up to 600 each for bullet, blitz and
-  rapid, all available classical and ultrabullet games), scored on the HPC
-  CPU with the attention-weighted `AnomalyDetector`. Overall p75 382.17 and
-  p95 634.11; every time control has its own cutoff. The full sample
-  completed, so it is not provisional. Method, results table, and the
-  sample-game sanity check are in `experiments/satt_cutoffs/README.md`. A
-  "Provisional cutoffs" chip in the suspicion header appears only if the
-  main score's cutoffs are provisional.
+All four methods' cutoffs live in `src/static/suspicion_cutoffs.json` under
+`methods`, keyed by method id, and all four come from the **same** 2,822
+held-out test games (5,644 sides; a stratified sample of up to 700 each for
+bullet, blitz and rapid plus all available classical and ultrabullet games),
+scored on the HPC CPU with this repo's own code. Each entry names its own
+score in a `score` field, and the API drops an entry whose `score` does not
+match its key, so one method's distribution can never label another's score.
+Overall cutoffs (p75 / p95): S_att 379.27 / 629.16 rating points, LightGBM
+0.5807 / 0.7656, per-move detector 0.4805 / 0.8227, CNN-BiLSTM
+0.6275 / 0.8111; every time control has its own cutoff. None is provisional.
+Method, tables with bootstrap CIs, and every sample under every method are in
+`experiments/method_cutoffs/README.md`. (S_att previously had its own file
+from a separate 2,536-game draw, `experiments/satt_cutoffs/`; its cutoffs
+agree with these to within their bootstrap CIs.) A "Provisional cutoffs" chip in the
+suspicion header appears only if the selected method's cutoffs are marked
+provisional.
 
 Labels never claim cheating and never say "likely" or name a player as
 suspicious. About 5 percent of ordinary games land in "Highly unusual" by
-construction, and the bundled `synthetic: false alarm` sample (see "Sample
-games" below) has no engine moves at all yet scores "Highly unusual" on one
-side. A label describes how uncommon a score is among ordinary games, not a
-verdict about the players.
+construction, under every method, and the bundled `synthetic: false alarm`
+sample (see "Sample games" below) has no engine moves at all yet scores
+"Highly unusual" on one side under the default method. The methods often
+disagree on the same game. A label describes how uncommon a score is among
+ordinary games, not a verdict about the players.
 
-The API returns the labels and the cutoffs actually applied for both scores
-(see [docs/api.md](api.md)), so the labelling logic is testable independent of the
-UI. `suspicion_labels.py` takes a score and a cutoffs object in the shared
-shape, with no reference to either score.
+The API returns the labels and the cutoffs actually applied for every method
+(see [docs/api.md](api.md)), so the labelling logic is testable independent
+of the UI. `suspicion_labels.py` takes a score and a cutoffs object in the
+shared shape, with no reference to any particular score.
 
 ## Sample games
 
@@ -220,8 +241,8 @@ same analysis board as every other input mode. Cards are grouped by
 - **Synthetic anomaly: caught / false alarm / missed** - three games from
   this project's own synthetic anomaly corpora (a Maia policy network's
   moves with some fraction substituted for a stronger engine's,
-  `src/generate_anomaly_corpus.py`), one per outcome for the main (detector)
-  score against the cutoffs above: **caught** (corpus v1, 60 percent Lc0
+  `src/generate_anomaly_corpus.py`), one per outcome for the default method
+  (the per-move detector) against its cutoffs above: **caught** (corpus v1, 60 percent Lc0
   substitution, White scores 0.95, Highly unusual), **false alarm** (corpus
   v2, no engine moves, Black still scores 0.89, Highly unusual) and
   **missed** (corpus v2, 15 of Black's 34 eligible moves swapped for

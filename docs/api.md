@@ -53,7 +53,19 @@ All three `predict/*` endpoints return the same shape:
   the computed score S_att (attention-weighted deviation from baseline, in
   rating points), always returned for comparison.
 - `white_computed_label`, `black_computed_label`, `computed_cutoffs_used`:
-  the same label fields for S_att, against the S_att cutoffs file.
+  the same label fields for S_att, against its own cutoffs.
+- `suspicion_methods`: every selectable suspicion-score method, keyed by id in
+  page order: `s_att` (computed score), `lgbm_a0g` (LightGBM detector),
+  `detector_a3g_seed0` (per-move detector, the default) and `cnn_bilstm_a4`
+  (CNN-BiLSTM detector). All are computed from the same rating-model pass, so
+  a client can switch methods without another request. Each entry has
+  `available` (false when that model is not loaded, with every other field
+  `null`), `scale` (`rating_points` for S_att, `unit` for the 0 to 1
+  detectors), `white_score`, `black_score`, `white_label`, `black_label`, and
+  `cutoffs_used` (same shape as `suspicion_cutoffs_used`, against that
+  method's own entry in `src/static/suspicion_cutoffs.json`).
+- `default_suspicion_method`: the method mirrored in the top-level
+  `*_suspicion_*` fields (`detector_a3g_seed0`).
 - `per_move`: one record per ply (`ply`, `move` as SAN, `uci`, `white_rating`,
   `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`,
   `clock_seconds`, `time_spent_seconds`). `clock_seconds` is that ply's mover's
