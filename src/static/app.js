@@ -4,6 +4,8 @@ const API_BASE = "";
 const AUTOPLAY_INTERVAL_MS = 1000;
 const HIDE_ACTUAL_RATINGS_KEY = "ratingnet.hideActualRatings";
 const THEME_KEY = "ratingnet.theme";
+const SUSPICION_METHOD_KEY = "ratingnet.suspicionMethod";
+const DEFAULT_SUSPICION_METHOD = "detector_a3g_seed0";
 const LIVE_RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 const LIVE_CLOCK_TICK_MS = 100;
 const LOW_CLOCK_SECONDS = 20;
@@ -41,7 +43,7 @@ const METRIC_INFO = {
   },
   baseline: {
     term: "Baseline and its source",
-    text: "The pre-game rating both suspicion scores measure each side against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess.",
+    text: "The pre-game rating every suspicion score measures each side against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess.",
   },
   deviation: {
     term: "Deviation from baseline",
@@ -55,17 +57,24 @@ const METRIC_INFO = {
     term: "Critical move",
     text: "A move flagged for closer human review because it ranks top by attention times rating deviation. Plies before ply 10 are excluded from the ranking. It is a pointer to look at, not a verdict.",
   },
+  // suspicion, suspicionMethod and computedScore texts are filled in from
+  // src/static/suspicion_methods.json (see applySuspicionMethodInfo), so each
+  // method's measured numbers come from that table, never from this file.
   suspicion: {
-    term: "Suspicion score (detector)",
-    text: "A trained detector's score from 0 to 1 for how much this side's play resembles games with engine moves inserted, read from the rating model's per-move estimates and attention plus simple board and clock facts. It is a review aid, not proof of cheating, and not a calibrated probability: on synthetic games from rating bands withheld from training it reached ROC-AUC about 0.75, falling to about 0.58 and 0.61 when only 2 and 5 percent of moves were engine moves (about 0.89 at 60 percent).",
+    term: "Suspicion score",
+    text: "How much this side's play resembles games with engine moves inserted, under the method selected below. It is a review aid, not proof of cheating, and not a calibrated probability.",
+  },
+  suspicionMethod: {
+    term: "Suspicion score method",
+    text: "Four ways of scoring the same game, all computed from one run of the rating model, so switching does not re-run it. Each is a review aid, not proof of cheating. Critical moves and chart markers always rank by attention times deviation, whatever method is selected.",
   },
   computedScore: {
     term: "Computed score (S_att, first method)",
-    text: "The first method tried: the attention-weighted average gap, in rating points, between the model's per-move estimate and the player's baseline. It has no trained parameters and separated engine-substituted games only weakly in thesis evaluation (ROC-AUC 0.555 on synthetic data), so it is shown for comparison only. Its labels use its own cutoffs.",
+    text: "The first method tried: the attention-weighted average gap, in rating points, between the model's per-move estimate and the player's baseline. It has no trained parameters and is shown for comparison only. Its labels use its own cutoffs.",
   },
   suspicionLabel: {
     term: "Typical / Unusual / Highly unusual",
-    text: "Compares this side's detector score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile, Unusual is the 75th to 95th, and Highly unusual is above the 95th. It describes how uncommon the score is, not whether anyone cheated; a clean synthetic game can still land in the highly-unusual range.",
+    text: "Compares this side's score under the selected method with the same method's scores on ordinary rated games from the thesis held-out test set (the same games for every method): Typical is below the 75th percentile, Unusual is the 75th to 95th, and Highly unusual is above the 95th. It describes how uncommon the score is, not whether anyone cheated; a clean synthetic game can still land in the highly-unusual range.",
   },
   suspicionProvisional: {
     term: "Provisional cutoffs",
@@ -86,6 +95,10 @@ const METRIC_INFO = {
   liveVsFull: {
     term: "Live estimate vs full-game analysis",
     text: "The live curve freezes each move's estimate the instant it was computed from a from-scratch rerun up to that move, and never revises it later. Full-game analysis reruns the whole finished game at once and is the more accurate, final view.",
+  },
+  savedDetectorScore: {
+    term: "Saved detector score",
+    text: "The suspect side's per-move detector score (the default method) recorded in the thesis evaluation run for this synthetic game, saved ahead of time so it does not depend on this deployment.",
   },
   testError: {
     term: "Saved test error",
@@ -118,6 +131,8 @@ const state = {
   samplesManifest: null,
   showActualRatings: true,
   activeInfoIcon: null,
+  suspicionMethod: DEFAULT_SUSPICION_METHOD,
+  suspicionMethods: null, // src/static/suspicion_methods.json, keyed by id
   boardInView: true,
   live: {
     active: false,
@@ -872,7 +887,7 @@ function renderSampleMetaBox(sampleMeta) {
     rows.push(["Suspect side", escapeHtml(sampleMeta.suspect_color === "white" ? "White" : "Black")]);
   }
   if (typeof sampleMeta.detector_eval === "number") {
-    rows.push([`Saved detector score ${infoIconHtml("suspicion")}`, sampleMeta.detector_eval.toFixed(2)]);
+    rows.push([`Saved detector score ${infoIconHtml("savedDetectorScore")}`, sampleMeta.detector_eval.toFixed(2)]);
   }
   if (typeof sampleMeta.s_att_eval === "number") {
     rows.push([`Saved S_att ${infoIconHtml("computedScore")}`, sampleMeta.s_att_eval.toFixed(1)]);
@@ -902,15 +917,139 @@ function renderSampleMetaBox(sampleMeta) {
   });
 }
 
-// The main score is the trained detector (0 to 1) unless the server could not
-// load it, in which case the API reports suspicion_score_kind "computed" and the
-// main bar falls back to S_att in rating points.
-function isDetectorScore(result) {
-  return result.suspicion_score_kind === "detector";
+// --- Suspicion method selector ---------------------------------------------
+
+const SUSPICION_METHOD_IDS = ["s_att", "lgbm_a0g", "detector_a3g_seed0", "cnn_bilstm_a4"];
+
+function loadSuspicionMethodPreference() {
+  try {
+    const saved = window.localStorage.getItem(SUSPICION_METHOD_KEY);
+    return SUSPICION_METHOD_IDS.includes(saved) ? saved : DEFAULT_SUSPICION_METHOD;
+  } catch (err) {
+    return DEFAULT_SUSPICION_METHOD;
+  }
 }
 
-function formatScore(score, detector) {
-  return detector ? score.toFixed(2) : score.toFixed(1);
+function saveSuspicionMethodPreference(methodId) {
+  try {
+    window.localStorage.setItem(SUSPICION_METHOD_KEY, methodId);
+  } catch (err) {
+    // Storage unavailable; the choice just won't persist across reloads.
+  }
+}
+
+function formatAuc(value) {
+  return typeof value === "number" ? value.toFixed(3) : "?";
+}
+
+function methodCaption(method) {
+  const auc = method.auc || {};
+  return (
+    `ROC-AUC ${formatAuc(auc.withheld_band)} on rating bands never seen in training; ` +
+    `${formatAuc(auc.rate60)} when 60% of moves are engine moves`
+  );
+}
+
+function methodInfoText(method) {
+  const auc = method.auc || {};
+  return (
+    `${method.description} It is a review aid, not proof of cheating` +
+    (method.scale === "unit" ? ", and not a calibrated probability" : "") +
+    `. On synthetic games from rating bands withheld from training it reached ROC-AUC ${formatAuc(auc.withheld_band)}, ` +
+    `${formatAuc(auc.rate02)} and ${formatAuc(auc.rate05)} when only 2 and 5 percent of moves were engine moves, ` +
+    `and ${formatAuc(auc.rate60)} at 60 percent (0.5 is chance).` +
+    (method.caveat ? ` ${method.caveat}` : "")
+  );
+}
+
+// Fills the method-dependent info texts from the methods table: the main
+// "Suspicion" popover follows the selected method; the method popover lists
+// all four; the S_att entry (also used by the sample box) keeps its own.
+function applySuspicionMethodInfo() {
+  const table = state.suspicionMethods;
+  if (!table) return;
+  const selected = table.methods[state.suspicionMethod];
+  if (selected) {
+    METRIC_INFO.suspicion.term = `Suspicion score: ${selected.short_label}`;
+    METRIC_INFO.suspicion.text = methodInfoText(selected);
+  }
+  const sAtt = table.methods.s_att;
+  if (sAtt) {
+    METRIC_INFO.computedScore.text = `${methodInfoText(sAtt)} Its labels use its own cutoffs.`;
+  }
+  const list = SUSPICION_METHOD_IDS.filter((id) => table.methods[id])
+    .map((id) => `${table.methods[id].label}: ${methodCaption(table.methods[id])}.`)
+    .join(" ");
+  METRIC_INFO.suspicionMethod.text =
+    "Four ways of scoring the same game, all computed from one run of the rating model, so switching does not " +
+    `re-run it. Each is a review aid, not proof of cheating. ${list} ${table.critical_moves_note}`;
+  renderMetricsGlossary();
+}
+
+function renderSuspicionMethodCaption() {
+  const method = state.suspicionMethods && state.suspicionMethods.methods[state.suspicionMethod];
+  $("suspicion-method-caption").textContent = method ? methodCaption(method) : "";
+}
+
+function setSuspicionMethod(methodId) {
+  state.suspicionMethod = SUSPICION_METHOD_IDS.includes(methodId) ? methodId : DEFAULT_SUSPICION_METHOD;
+  $("suspicion-method-select").value = state.suspicionMethod;
+  saveSuspicionMethodPreference(state.suspicionMethod);
+  applySuspicionMethodInfo();
+  renderSuspicionMethodCaption();
+  if (state.result) renderSuspicion(state.result);
+}
+
+async function loadSuspicionMethodsTable() {
+  try {
+    const response = await fetch(`${API_BASE}/static/suspicion_methods.json`);
+    if (!response.ok) throw new Error(`status ${response.status}`);
+    const table = await response.json();
+    state.suspicionMethods = {
+      ...table,
+      methods: Object.fromEntries((table.methods || []).map((m) => [m.id, m])),
+    };
+  } catch (err) {
+    // Captions and per-method info text stay generic; switching still works.
+    console.warn("Could not load the suspicion methods table:", err);
+    return;
+  }
+  applySuspicionMethodInfo();
+  renderSuspicionMethodCaption();
+}
+
+function setupSuspicionMethodSelector() {
+  state.suspicionMethod = loadSuspicionMethodPreference();
+  const select = $("suspicion-method-select");
+  select.value = state.suspicionMethod;
+  select.addEventListener("change", (evt) => setSuspicionMethod(evt.target.value));
+  loadSuspicionMethodsTable();
+}
+
+// The selected method's entry from the response. Older responses (and cached
+// ones from before the selector) have no suspicion_methods; they only carry the
+// default detector in the top-level fields.
+function selectedSuspicionEntry(result) {
+  const methods = result.suspicion_methods;
+  if (methods) {
+    return methods[state.suspicionMethod] || null;
+  }
+  if (state.suspicionMethod !== DEFAULT_SUSPICION_METHOD || result.suspicion_score_kind !== "detector") {
+    return null;
+  }
+  return {
+    available: true,
+    scale: "unit",
+    white_score: result.white_suspicion_score,
+    black_score: result.black_suspicion_score,
+    white_label: result.white_suspicion_label,
+    black_label: result.black_suspicion_label,
+    cutoffs_used: result.suspicion_cutoffs_used,
+  };
+}
+
+function formatScore(score, unit) {
+  return unit ? score.toFixed(2) : score.toFixed(1);
 }
 
 function computedGapTitle(score, baseline, source) {
@@ -921,30 +1060,40 @@ function computedGapTitle(score, baseline, source) {
 }
 
 function renderSuspicion(result) {
-  const whiteScore = result.white_suspicion_score;
-  const blackScore = result.black_suspicion_score;
-  const cutoffsUsed = result.suspicion_cutoffs_used;
-  const detector = isDetectorScore(result);
-
-  $("white-suspicion-value").textContent = formatScore(whiteScore, detector);
-  $("black-suspicion-value").textContent = formatScore(blackScore, detector);
-  const mainTitle = (score, baseline, source) =>
-    detector
-      ? `Detector score ${score.toFixed(2)} on a 0 to 1 scale (higher looks more engine-like; not a probability of cheating), ` +
-        `against baseline ${maskedOrRounded(baseline)} (${formatSource(source)})`
-      : computedGapTitle(score, baseline, source);
-  $("white-suspicion-value").title = mainTitle(whiteScore, result.white_baseline, result.white_baseline_source);
-  $("black-suspicion-value").title = mainTitle(blackScore, result.black_baseline, result.black_baseline_source);
-  $("suspicion-info").dataset.infoKey = detector ? "suspicion" : "computedScore";
+  const entry = selectedSuspicionEntry(result);
+  const available = Boolean(entry && entry.available);
+  $("suspicion-method-unavailable").hidden = available;
+  $("suspicion-section").dataset.method = state.suspicionMethod;
 
   $("suspicion-baseline-warning").hidden = ![result.white_baseline_source, result.black_baseline_source].includes(
     "self_prediction_fallback"
   );
 
-  const scaleMax = detector ? 1 : null;
-  renderSuspicionScale("white", whiteScore, result.white_suspicion_label, cutoffsUsed, result.provisional, scaleMax);
-  renderSuspicionScale("black", blackScore, result.black_suspicion_label, cutoffsUsed, result.provisional, scaleMax);
-  renderComputedScoreLine(result, detector);
+  if (!available) {
+    for (const side of ["white", "black"]) {
+      $(`${side}-suspicion-value`).textContent = "-";
+      $(`${side}-suspicion-value`).title = "This method is not available on this server";
+      renderSuspicionScale(side, 0, null, null, result.provisional);
+    }
+    $("suspicion-label-info").hidden = true;
+    $("suspicion-label-provisional").hidden = true;
+    return;
+  }
+
+  const unit = entry.scale === "unit";
+  const cutoffsUsed = entry.cutoffs_used;
+  const methodName =
+    (state.suspicionMethods && state.suspicionMethods.methods[state.suspicionMethod]?.short_label) || "Score";
+  for (const side of ["white", "black"]) {
+    const score = entry[`${side}_score`];
+    const value = $(`${side}-suspicion-value`);
+    value.textContent = formatScore(score, unit);
+    value.title = unit
+      ? `${methodName} ${score.toFixed(2)} on a 0 to 1 scale (higher looks more engine-like; not a probability of cheating), ` +
+        `against baseline ${maskedOrRounded(result[`${side}_baseline`])} (${formatSource(result[`${side}_baseline_source`])})`
+      : computedGapTitle(score, result[`${side}_baseline`], result[`${side}_baseline_source`]);
+    renderSuspicionScale(side, score, entry[`${side}_label`], cutoffsUsed, result.provisional, unit ? 1 : null);
+  }
 
   $("suspicion-label-info").hidden = !cutoffsUsed;
   const isProvisional = Boolean(cutoffsUsed && cutoffsUsed.provisional);
@@ -954,27 +1103,6 @@ function renderSuspicion(result) {
     const count = typeof n === "number" ? `Based on ${n.toLocaleString()} test games so far. ` : "";
     METRIC_INFO.suspicionProvisional.text = count + (cutoffsUsed.provisional_note || METRIC_INFO.suspicionProvisional.text);
   }
-}
-
-// The first method tried (S_att), as one secondary line under the main bars.
-// Hidden when the main bar is already showing S_att.
-function renderComputedScoreLine(result, detector) {
-  const row = $("suspicion-computed-row");
-  const available = detector && typeof result.white_computed_score === "number";
-  row.hidden = !available;
-  if (!available) {
-    return;
-  }
-  for (const side of ["white", "black"]) {
-    const value = $(`${side}-computed-value`);
-    value.textContent = result[`${side}_computed_score`].toFixed(1);
-    value.title = computedGapTitle(
-      result[`${side}_computed_score`], result[`${side}_baseline`], result[`${side}_baseline_source`]
-    );
-    renderSuspicionLabelChip(`${side}-computed`, result[`${side}_computed_label`], result.provisional);
-  }
-  const computedCutoffs = result.computed_cutoffs_used;
-  $("computed-provisional-note").hidden = !(computedCutoffs && computedCutoffs.provisional);
 }
 
 // Renders one side's suspicion score as a segmented Typical/Unusual/Highly
@@ -2242,6 +2370,7 @@ function init() {
   setupActualRatingToggle();
   setupInfoPopovers();
   renderMetricsGlossary();
+  setupSuspicionMethodSelector();
   $("submit-button").addEventListener("click", submitAnalysis);
 }
 

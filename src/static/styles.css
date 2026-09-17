@@ -1496,47 +1496,43 @@ body:has(#results-panel[hidden]) .tab-panel.samples-panel {
   color: var(--chip-high-text);
 }
 
-/* Secondary line for the first method tried (S_att), under the main bars. */
-.suspicion-computed-row {
+/* Method selector: which suspicion score the bars show, with that method's
+   own measured results as a one-line caption. */
+.suspicion-method-row {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px var(--space-2);
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
-.suspicion-computed-row[hidden] {
-  display: none;
-}
-
-.suspicion-computed-term {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.suspicion-computed-side {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.suspicion-computed-value {
-  font-variant-numeric: tabular-nums;
+.suspicion-method-term {
   font-weight: 600;
+}
+
+.suspicion-method-select {
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  background: var(--surface);
   color: var(--text);
 }
 
-.suspicion-computed-row .suspicion-label-chip {
-  padding: 1px 6px;
+.suspicion-method-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
-.suspicion-computed-row .suspicion-label-chip[hidden] {
-  display: none;
+.suspicion-method-caption {
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- Move list ----------------------------------------------------------------- */

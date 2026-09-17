@@ -86,7 +86,7 @@
       </button>
     </div>
     <p class="input-panel-intro">
-      Move-by-move rating estimates and a trained suspicion score, for a human fair-play reviewer.
+      Move-by-move rating estimates and a choice of suspicion scores, for a human fair-play reviewer.
       Paste a PGN with clock annotations, upload one, load a Lichess game, pick a sample, or follow a game live.
     </p>
     <p id="error-message" class="error-message" role="alert" hidden></p>
@@ -185,7 +185,7 @@
 
       <details id="warnings-box" class="card warnings-box" hidden></details>
 
-      <div class="card suspicion-section">
+      <div class="card suspicion-section" id="suspicion-section">
         <div class="card-head">
           <h2 class="card-title">Suspicion <button type="button" class="info-icon" id="suspicion-info" data-info-key="suspicion" aria-label="What is the suspicion score?">i</button></h2>
           <span class="card-subtle">Review aid, not proof</span>
@@ -193,6 +193,18 @@
           <span id="suspicion-baseline-warning" class="chip chip-warn" hidden>Self-estimated baseline <button type="button" class="info-icon" data-info-key="baseline" aria-label="What is the baseline?">i</button></span>
           <span id="suspicion-label-provisional" class="chip chip-warn" hidden>Provisional cutoffs <button type="button" class="info-icon" data-info-key="suspicionProvisional" aria-label="What does provisional mean here?">i</button></span>
           <button type="button" class="info-icon" id="suspicion-label-info" data-info-key="suspicionLabel" aria-label="What do these labels mean?">i</button>
+        </div>
+        <div class="suspicion-method-row">
+          <label for="suspicion-method-select" class="suspicion-method-term">Method</label>
+          <select id="suspicion-method-select" class="suspicion-method-select">
+            <option value="s_att">Computed score (first method tried)</option>
+            <option value="lgbm_a0g">Trained detector (LightGBM)</option>
+            <option value="detector_a3g_seed0" selected>Per-move detector (best, default)</option>
+            <option value="cnn_bilstm_a4">Full model (CNN-BiLSTM)</option>
+          </select>
+          <button type="button" class="info-icon" data-info-key="suspicionMethod" aria-label="What are these methods?">i</button>
+          <span id="suspicion-method-caption" class="suspicion-method-caption"></span>
+          <span id="suspicion-method-unavailable" class="chip chip-warn" hidden>Not available on this server</span>
         </div>
         <div class="suspicion-bar-row" data-side="white">
           <span class="suspicion-label"><span class="side-swatch side-swatch-white" aria-hidden="true"></span>White</span>
@@ -219,12 +231,6 @@
             </div>
             <div id="black-suspicion-marker" class="suspicion-marker" hidden></div>
           </div>
-        </div>
-        <div id="suspicion-computed-row" class="suspicion-computed-row" hidden>
-          <span class="suspicion-computed-term">First method: computed S_att <button type="button" class="info-icon" data-info-key="computedScore" aria-label="What is the computed score?">i</button></span>
-          <span class="suspicion-computed-side">W <span id="white-computed-value" class="suspicion-computed-value">-</span> <span id="white-computed-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span></span>
-          <span class="suspicion-computed-side">B <span id="black-computed-value" class="suspicion-computed-value">-</span> <span id="black-computed-suspicion-label-chip" class="suspicion-label-chip" hidden>-</span></span>
-          <span id="computed-provisional-note" class="suspicion-computed-note" title="The S_att cutoffs behind these labels come from a partial sample of held-out test games." hidden>provisional</span>
         </div>
       </div>
 
