@@ -1,0 +1,115 @@
+{
+  "score_id": "cnn_bilstm_a4",
+  "arm": "A4",
+  "model": "frozen rating-model CNN trunk (float16 embeddings) -> fine-tuned BiLSTM + causal Bahdanau attention (initialized from the rating model) -> gated-attention MIL head over the suspect side's plies",
+  "weights_file": "detector_cnn_bilstm_a4.pt",
+  "weights_md5": "c5a4b8ca9fb347747d47eb5721b8871b",
+  "weights_contents": "lstm.*, attention.*, and the MIL head; the CNN trunk is the served rating checkpoint's own conv/bn layers (frozen during A4 training)",
+  "source": {
+    "host": "hpc.cspc.edu.ph",
+    "weights": "~/Bacsain/thesis2/analysis/extra_arms/A4/model_best.pt",
+    "results": "~/Bacsain/thesis2/analysis/extra_arms/A4/results.json (created 2026-09-15 15:31:09 +0800)",
+    "training_code": "~/Bacsain/thesis2/analysis/scripts/extra_arm_a4.py (md5 05ac281e1c58cb63c935d18994cd1614)",
+    "shared_code": "~/Bacsain/thesis2/analysis/scripts/extra_arms_common.py (md5 ad5b8f0983a2a9ec6c11a8d2312be7bb)",
+    "rating_checkpoint": "models/preflight_check_2m/best_model.pth (md5 fcb38b8a6a3ee04a6b1859dd5bc69b75)"
+  },
+  "corpus": "synthetic anomaly corpus v2 (data/anomaly_corpus_v2, Maia bands with Stockfish 16 / Lc0 substitutions, real countdown clocks)",
+  "split": "v2",
+  "split_description": "the v2 split (train_anomaly_detector.make_split, seed 42): 70/15/15 stratified by (band, engine, rate), not twin-safe; bands 1300 and 1700 and substitution rate 10 percent withheld from training entirely. The withheld-band and withheld-rate conditions are the same games as under the grouped split",
+  "config": {
+    "seed": 0,
+    "max_plies": 100,
+    "backbone_lr": 0.0001,
+    "head_lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch": 256,
+    "epochs": 15,
+    "selection": "best validation AUC epoch",
+    "best_val_auc": 0.7366
+  },
+  "headline_auc": {
+    "seen": {
+      "auc": 0.7304,
+      "ci95": [
+        0.7242,
+        0.7361
+      ],
+      "n": 27000
+    },
+    "withheld_band": {
+      "auc": 0.7047,
+      "ci95": [
+        0.7,
+        0.7093
+      ],
+      "n": 52000
+    },
+    "withheld_rate_vs_clean": {
+      "auc": 0.626,
+      "ci95": [
+        0.621,
+        0.6317
+      ],
+      "n": 48200
+    },
+    "withheld_both": {
+      "auc": 0.6386,
+      "ci95": [
+        0.617,
+        0.6615
+      ],
+      "n": 8000
+    },
+    "withheld_band_rate02_vs_clean": {
+      "auc": 0.5475,
+      "ci95": [
+        0.5377,
+        0.558
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate05_vs_clean": {
+      "auc": 0.5708,
+      "ci95": [
+        0.562,
+        0.5799
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate20_vs_clean": {
+      "auc": 0.672,
+      "ci95": [
+        0.6636,
+        0.6802
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate40_vs_clean": {
+      "auc": 0.7845,
+      "ci95": [
+        0.7778,
+        0.7914
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate60_vs_clean": {
+      "auc": 0.8375,
+      "ci95": [
+        0.8312,
+        0.8437
+      ],
+      "n": 16000
+    },
+    "strength_check": {
+      "auc": 0.5326,
+      "definition": "AUC(hard-negative vs rate 0), test + heldout_band"
+    }
+  },
+  "per_move_localization_withheld_band": {
+    "hit_at_1": 0.1941,
+    "random_hit_at_1": 0.2428,
+    "ply_auc": 0.5426,
+    "note": "per-move instance logits localize substituted moves at or below chance; the app does not use them for critical moves"
+  },
+  "flag": "a board-level model may recognize engine-style moves directly; read with the withheld-band, low-rate and strength checks"
+}

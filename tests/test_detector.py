@@ -106,20 +106,3 @@ def test_labels_for_detector_scores_use_its_cutoffs():
 
 def test_labels_omitted_without_cutoffs():
     assert api._labels_for_scores(None, 0.5, 0.5, "blitz") == (None, None, None)
-
-
-def test_cutoffs_file_for_another_score_is_rejected(tmp_path):
-    path = tmp_path / "cutoffs.json"
-    path.write_text(json.dumps({**DETECTOR_CUTOFFS, "score": "s_att"}))
-    assert api._load_cutoffs(path, detector.SCORE_ID) is None
-    assert api._load_cutoffs(path, "s_att") is not None
-    assert api._load_cutoffs(tmp_path / "missing.json", "s_att") is None
-
-
-def test_shipped_cutoffs_files_name_their_scores():
-    for path, expected in (
-        (api.SUSPICION_CUTOFFS_PATH, detector.SCORE_ID),
-        (api.COMPUTED_CUTOFFS_PATH, api.COMPUTED_SCORE_ID),
-    ):
-        if path.exists():
-            assert json.loads(path.read_text())["score"] == expected

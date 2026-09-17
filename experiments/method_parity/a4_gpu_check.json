@@ -1,0 +1,86 @@
+{
+ "1200_lc0_r60/game_00606.pkl": {
+  "n": 36,
+  "max_emb_diff": 0.0006103515625,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.5146921873092651,
+  "gpu_with_thesis_emb": 0.5148335099220276
+ },
+ "1300_lc0_r10/game_01307.pkl": {
+  "n": 54,
+  "max_emb_diff": 0.000457763671875,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.21038818359375,
+  "gpu_with_thesis_emb": 0.21198779344558716
+ },
+ "1300_lc0_r20/game_01178.pkl": {
+  "n": 69,
+  "max_emb_diff": 0.000823974609375,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.8755154013633728,
+  "gpu_with_thesis_emb": 0.8758984208106995
+ },
+ "1300_stockfish16_r02/game_00002.pkl": {
+  "n": 60,
+  "max_emb_diff": 0.0005950927734375,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.2091619223356247,
+  "gpu_with_thesis_emb": 0.2091219574213028
+ },
+ "1300_stockfish16_r05/game_01202.pkl": {
+  "n": 43,
+  "max_emb_diff": 0.0006103515625,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.5796708464622498,
+  "gpu_with_thesis_emb": 0.592239499092102
+ },
+ "1300_stockfish16_r10/game_00002.pkl": {
+  "n": 100,
+  "max_emb_diff": 0.00048828125,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.4302607476711273,
+  "gpu_with_thesis_emb": 0.4305212199687958
+ },
+ "1500_hardneg/game_01480.pkl": {
+  "n": 100,
+  "max_emb_diff": 0.0006103515625,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.40623506903648376,
+  "gpu_with_thesis_emb": 0.4065273702144623
+ },
+ "1500_lc0_r00/game_01825.pkl": {
+  "n": 74,
+  "max_emb_diff": 0.00067138671875,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.2913082540035248,
+  "gpu_with_thesis_emb": 0.29158779978752136
+ },
+ "1500_lc0_r40/game_00675.pkl": {
+  "n": 93,
+  "max_emb_diff": 0.00054931640625,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.4778408110141754,
+  "gpu_with_thesis_emb": 0.47771039605140686
+ },
+ "1600_lc0_r60/game_01598.pkl": {
+  "n": 48,
+  "max_emb_diff": 0.0006103515625,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.7062847018241882,
+  "gpu_with_thesis_emb": 0.7063485383987427
+ },
+ "1600_stockfish16_r00/game_00291.pkl": {
+  "n": 77,
+  "max_emb_diff": 0.0006103515625,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.2911171317100525,
+  "gpu_with_thesis_emb": 0.29106423258781433
+ },
+ "1700_lc0_r40/game_01002.pkl": {
+  "n": 95,
+  "max_emb_diff": 0.000579833984375,
+  "max_clk_diff": 0.0,
+  "cpu_with_thesis_emb": 0.3470154404640198,
+  "gpu_with_thesis_emb": 0.34728002548217773
+ }
+}

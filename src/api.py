@@ -14,9 +14,13 @@ checkpoint is not found and no override is set, it falls back to Omori's
 released baseline (``model_55.pth``) and logs a warning, since that
 checkpoint has no attention or anomaly branch.
 
-The main suspicion score is the trained per-move detector (``detector.py``,
-thesis arm A3g); the parameter-free attention-weighted score S_att from
-``anomaly.py`` is still computed and returned as ``*_computed_score``.
+Every response carries four suspicion scores under ``suspicion_methods``, all
+computed from one rating-model pass: the parameter-free attention-weighted
+score S_att (``anomaly.py``), the LightGBM detector (``lgbm_detector.py``,
+thesis arm A0g), the per-move detector (``detector.py``, arm A3g, the default
+and the one mirrored into the top-level ``*_suspicion_*`` fields) and the full
+CNN-BiLSTM detector (``cnn_bilstm_detector.py``, arm A4). The web page switches
+between them without another request.
 
 Predictions and attention weights are logged to ``logs/predictions.jsonl``
 for reproducibility and fairness-review audit trails.
@@ -51,7 +55,9 @@ from pydantic import BaseModel
 from baseline import resolve_actual_rating, resolve_baseline
 from chess_rating_net import ChessEloPredictor
 from critical_moves import DEFAULT_MIN_PLY, DEFAULT_TOP_K, compute_critical_moves
+import cnn_bilstm_detector as cnn_bilstm_module
 import detector as detector_module
+import lgbm_detector as lgbm_module
 from format_data import (
     board_to_array,
     compute_time_spent,
@@ -83,18 +89,27 @@ CHECKPOINT_PATH: Path | None = None
 # score instead and a warning says so.
 DETECTOR: detector_module.Detector | None = None
 
+# The other two trained detectors, selectable in the page. None when their
+# weights are missing, in which case that method is reported as unavailable.
+LGBM_DETECTOR: lgbm_module.LgbmDetector | None = None
+CNN_BILSTM_DETECTOR: cnn_bilstm_module.CnnBilstmDetector | None = None
+
 SCORE_KIND_DETECTOR = "detector"
 SCORE_KIND_COMPUTED = "computed"
 COMPUTED_SCORE_ID = "s_att"
 
-# Percentile cutoffs, loaded once at startup: one file per score, each naming the
-# score it belongs to in its "score" field so the two can never be mixed. None
-# when a file is missing or names a different score, in which case that score's
-# labels are omitted rather than guessed. See "Suspicion labels" in the README.
-SUSPICION_CUTOFFS: dict[str, Any] | None = None
-COMPUTED_CUTOFFS: dict[str, Any] | None = None
+# Selectable suspicion-score methods, in the order the page lists them. Each id
+# is also the "score" its cutoffs entry must name.
+METHOD_IDS = (COMPUTED_SCORE_ID, lgbm_module.SCORE_ID, detector_module.SCORE_ID, cnn_bilstm_module.SCORE_ID)
+DEFAULT_METHOD = detector_module.SCORE_ID
+
+# Percentile cutoffs for every method, loaded once at startup from one file keyed
+# by method id. Each entry names its own score in its "score" field and is
+# ignored when that does not match its key, so cutoffs can never be applied to
+# another method's score. A method with no valid entry gets no labels rather
+# than guessed ones. See "Suspicion labels" in docs/web-prototype.md.
+METHOD_CUTOFFS: dict[str, dict[str, Any]] = {}
 SUSPICION_CUTOFFS_PATH = Path(__file__).resolve().parent / "static" / "suspicion_cutoffs.json"
-COMPUTED_CUTOFFS_PATH = Path(__file__).resolve().parent / "static" / "suspicion_cutoffs_s_att.json"
 
 # Lightweight cache: keyed by a hash of the request inputs -> result.
 RESULT_CACHE: dict[str, Any] = {}
@@ -221,26 +236,30 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path
     return model, params, device, checkpoint_path
 
 
-def _load_cutoffs(path: Path, expected_score: str) -> dict[str, Any] | None:
+def _load_method_cutoffs(path: Path) -> dict[str, dict[str, Any]]:
+    """{method_id: cutoffs} for every entry in the combined cutoffs file whose
+    own "score" field matches its key; others are dropped with a warning."""
     if not path.exists():
-        logging.warning(
-            "No cutoffs file at %s; labels for score '%s' will be omitted from responses.",
-            path,
-            expected_score,
-        )
-        return None
+        logging.warning("No cutoffs file at %s; suspicion labels will be omitted from responses.", path)
+        return {}
     with path.open(encoding="utf-8") as f:
-        cutoffs = json.load(f)
-    if cutoffs.get("score") != expected_score:
-        logging.warning(
-            "Cutoffs file %s is for score '%s', not '%s'; ignoring it so labels are never "
-            "computed against another score's distribution.",
-            path,
-            cutoffs.get("score"),
-            expected_score,
-        )
-        return None
-    return cutoffs
+        data = json.load(f)
+    loaded = {}
+    for method_id, cutoffs in (data.get("methods") or {}).items():
+        if cutoffs.get("score") != method_id:
+            logging.warning(
+                "Cutoffs entry '%s' in %s is for score '%s'; ignoring it so labels are never "
+                "computed against another score's distribution.",
+                method_id,
+                path,
+                cutoffs.get("score"),
+            )
+            continue
+        loaded[method_id] = cutoffs
+    for method_id in METHOD_IDS:
+        if method_id not in loaded:
+            logging.warning("No cutoffs for suspicion method '%s'; its labels will be omitted.", method_id)
+    return loaded
 
 
 def _load_detector() -> detector_module.Detector | None:
@@ -253,16 +272,34 @@ def _load_detector() -> detector_module.Detector | None:
     return detector_module.load_detector(device=DEVICE)
 
 
+def _load_lgbm_detector() -> lgbm_module.LgbmDetector | None:
+    if not lgbm_module.DEFAULT_MODEL_PATH.exists():
+        logging.warning("LightGBM detector model not found at %s; that method is unavailable.",
+                        lgbm_module.DEFAULT_MODEL_PATH)
+        return None
+    return lgbm_module.load_lgbm_detector()
+
+
+def _load_cnn_bilstm_detector() -> cnn_bilstm_module.CnnBilstmDetector | None:
+    if not cnn_bilstm_module.DEFAULT_WEIGHTS_PATH.exists():
+        logging.warning("CNN-BiLSTM detector weights not found at %s; that method is unavailable.",
+                        cnn_bilstm_module.DEFAULT_WEIGHTS_PATH)
+        return None
+    return cnn_bilstm_module.load_cnn_bilstm_detector(device=DEVICE)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup hook: load the model once and keep it in memory."""
-    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH, SUSPICION_CUTOFFS, COMPUTED_CUTOFFS, DETECTOR
+    global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH, METHOD_CUTOFFS
+    global DETECTOR, LGBM_DETECTOR, CNN_BILSTM_DETECTOR
     _setup_logging()
     MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH = _load_model()
     logging.info("Serving checkpoint: %s", CHECKPOINT_PATH)
     DETECTOR = _load_detector()
-    SUSPICION_CUTOFFS = _load_cutoffs(SUSPICION_CUTOFFS_PATH, detector_module.SCORE_ID)
-    COMPUTED_CUTOFFS = _load_cutoffs(COMPUTED_CUTOFFS_PATH, COMPUTED_SCORE_ID)
+    LGBM_DETECTOR = _load_lgbm_detector()
+    CNN_BILSTM_DETECTOR = _load_cnn_bilstm_detector()
+    METHOD_CUTOFFS = _load_method_cutoffs(SUSPICION_CUTOFFS_PATH)
     yield
     MODEL = None
 
@@ -375,6 +412,39 @@ def _labels_for_scores(
     return label_for_score(white_score, resolved), label_for_score(black_score, resolved), used
 
 
+def _suspicion_methods(
+    method_scores: dict[str, tuple[float, float] | None], time_control: str | None
+) -> dict[str, dict[str, Any]]:
+    """Per-method scores and labels, in METHOD_IDS order, for the page's method
+    selector. A method whose model is not loaded is ``available: false`` with
+    null fields; S_att scores are rating points, the detectors' are 0 to 1."""
+    methods = {}
+    for method_id in METHOD_IDS:
+        scores = method_scores.get(method_id)
+        entry: dict[str, Any] = {
+            "available": scores is not None,
+            "scale": "rating_points" if method_id == COMPUTED_SCORE_ID else "unit",
+            "white_score": None,
+            "black_score": None,
+            "white_label": None,
+            "black_label": None,
+            "cutoffs_used": None,
+        }
+        if scores is not None:
+            white, black = scores
+            digits = 4 if method_id == COMPUTED_SCORE_ID else 6
+            labels = _labels_for_scores(METHOD_CUTOFFS.get(method_id), white, black, time_control)
+            entry.update(
+                white_score=round(white, digits),
+                black_score=round(black, digits),
+                white_label=labels[0],
+                black_label=labels[1],
+                cutoffs_used=labels[2],
+            )
+        methods[method_id] = entry
+    return methods
+
+
 def _run_inference(
     pgn_text: str,
     white_baseline_request: float | None,
@@ -451,13 +521,14 @@ def _run_inference(
             "are neutral zeros, not a real assessment."
         )
 
-    # The trained detector reads the rating model's per-move estimates and
-    # attention, so it needs the same attention-enabled checkpoint.
-    white_detector = None
-    black_detector = None
-    if DETECTOR is not None and anomaly_available and raw_attention is not None:
-        white_detector, black_detector = detector_module.score_game(
-            DETECTOR,
+    # The trained detectors read the rating model's own outputs (per-move
+    # estimates and attention, or for A4 its CNN trunk), so they need the same
+    # attention-enabled checkpoint. All of them reuse this one rating-model pass.
+    method_scores: dict[str, tuple[float, float] | None] = {method_id: None for method_id in METHOD_IDS}
+    if anomaly_available:
+        method_scores[COMPUTED_SCORE_ID] = (white_computed, black_computed)
+    if anomaly_available and raw_attention is not None:
+        detector_args = (
             per_move_preds_orig.numpy(),
             raw_attention.squeeze(0).cpu().numpy(),
             moves,
@@ -465,6 +536,15 @@ def _run_inference(
             white_resolution.value,
             black_resolution.value,
         )
+        if DETECTOR is not None:
+            method_scores[detector_module.SCORE_ID] = detector_module.score_game(DETECTOR, *detector_args)
+        if LGBM_DETECTOR is not None:
+            method_scores[lgbm_module.SCORE_ID] = lgbm_module.score_game(LGBM_DETECTOR, *detector_args)
+        if CNN_BILSTM_DETECTOR is not None:
+            method_scores[cnn_bilstm_module.SCORE_ID] = cnn_bilstm_module.score_game(
+                CNN_BILSTM_DETECTOR, MODEL, positions, clocks
+            )
+    white_detector, black_detector = method_scores[detector_module.SCORE_ID] or (None, None)
 
     # Clock remaining is already parsed from the PGN's [%clk ...] comments (one of
     # the model's own inputs; see the "clockTime" METRIC_INFO entry). Time spent
@@ -499,14 +579,15 @@ def _run_inference(
     # "note"), never a cheat-detection verdict. Omitted (None) when the checkpoint
     # has no anomaly branch or the score has no cutoffs file.
     tc_bucket = time_control_bucket(headers.get("TimeControl"))
-    computed_labels = (None, None, None)
-    if anomaly_available:
-        computed_labels = _labels_for_scores(COMPUTED_CUTOFFS, white_computed, black_computed, tc_bucket)
+    suspicion_methods = _suspicion_methods(method_scores, tc_bucket)
+    computed_entry = suspicion_methods[COMPUTED_SCORE_ID]
+    computed_labels = (computed_entry["white_label"], computed_entry["black_label"], computed_entry["cutoffs_used"])
 
     if white_detector is not None and black_detector is not None:
         score_kind = SCORE_KIND_DETECTOR
         white_score, black_score = white_detector, black_detector
-        main_labels = _labels_for_scores(SUSPICION_CUTOFFS, white_detector, black_detector, tc_bucket)
+        detector_entry = suspicion_methods[detector_module.SCORE_ID]
+        main_labels = (detector_entry["white_label"], detector_entry["black_label"], detector_entry["cutoffs_used"])
     else:
         score_kind = SCORE_KIND_COMPUTED
         white_score, black_score = white_computed, black_computed
@@ -543,6 +624,8 @@ def _run_inference(
         "white_computed_label": computed_labels[0],
         "black_computed_label": computed_labels[1],
         "computed_cutoffs_used": computed_labels[2],
+        "default_suspicion_method": DEFAULT_METHOD,
+        "suspicion_methods": suspicion_methods,
         "per_move": move_records,
         "critical_moves": critical_moves,
         "critical_moves_min_ply": min_ply,
