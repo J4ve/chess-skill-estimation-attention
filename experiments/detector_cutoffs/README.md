@@ -22,7 +22,7 @@ Same approach as the S_att cutoffs, with one change to reach about 3,000 games.
    (md5 `fcb38b8a6a3ee04a6b1859dd5bc69b75`) exactly as `api._run_inference` does,
    then through this repo's own `src/detector.py` with each side as the suspect
    against its PGN-header rating. Games under 20 plies are skipped: 2,822 games
-   scored ({c['overall']['n_sides']:,} sides), 196 skipped as too short, no other skips.
+   scored (5,644 sides), 196 skipped as too short, no other skips.
    The full sample completed, so the file is not provisional.
 4. **Cutoffs** (`cutoffs_from_scores.py`). 75th and 95th percentiles (linear
    interpolation) overall and per time control, 95% bootstrap CIs from 2,000
