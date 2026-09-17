@@ -2,6 +2,9 @@
 models/
 *.pt
 *.pth
+# Exception: the small trained detector ships with the app (see src/models/)
+!src/models/
+!src/models/*.pt
 data/*.pgn
 data/*.csv
 data/*.jsonl

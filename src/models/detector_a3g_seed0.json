@@ -1,0 +1,203 @@
+{
+  "score_id": "detector_a3g_seed0",
+  "arm": "A3g_seed0",
+  "model": "BiGRU 2-layer + gated-attention MIL pooling (per-ply instance logits pooled over the suspect side's plies)",
+  "weights_file": "detector_a3g_seed0.pt",
+  "weights_md5": "05dd93a10b62e5c8f9195535294762fa",
+  "source": {
+    "host": "hpc.cspc.edu.ph",
+    "weights": "~/Bacsain/thesis2/analysis/extra_arms/A3g_seed0/model.pt",
+    "results": "~/Bacsain/thesis2/analysis/extra_arms/A3g_seed0/results.json",
+    "training_code": "~/Bacsain/thesis2/analysis/scripts/extra_arm_a3.py (md5 c1826c43d1a7b5c783ac51a1b454202d)",
+    "shared_code": "~/Bacsain/thesis2/analysis/scripts/extra_arms_common.py (md5 ad5b8f0983a2a9ec6c11a8d2312be7bb)",
+    "feature_code": "~/Bacsain/thesis2/analysis/scripts/extract_detector_features_v2.py --stage rating_cheap (md5 beaf5098994a12af80bfa9f57845e468)",
+    "plan": "analysis/anomaly-extra-arms-plan.md",
+    "rating_checkpoint": "models/preflight_check_2m/best_model.pth (md5 fcb38b8a6a3ee04a6b1859dd5bc69b75)"
+  },
+  "corpus": "synthetic anomaly corpus v2 (data/anomaly_corpus_v2, Maia bands with Stockfish 16 / Lc0 substitutions, real countdown clocks)",
+  "split": "grouped",
+  "split_description": "twin-safe grouped split: 70/15/15 train/val/test by (band, game index), so no game twin crosses partitions; bands 1300 and 1700 and substitution rate 10 percent are withheld from training entirely (split seed 42)",
+  "seed": 0,
+  "config": {
+    "hidden": 128,
+    "dropout": 0.3,
+    "max_plies": 100,
+    "selection": "max validation AUC over hidden in {64,128} x dropout in {0.1,0.3}, seed 0"
+  },
+  "training_started": "2026-09-15 14:51:09 +0800",
+  "training_finished": "2026-09-15 15:06:28 +0800",
+  "best_val_auc": 0.762,
+  "headline_auc": {
+    "seen_test": {
+      "auc": 0.754,
+      "ci95": [
+        0.7483,
+        0.7598
+      ],
+      "n": 27000
+    },
+    "withheld_band": {
+      "auc": 0.7517,
+      "ci95": [
+        0.7472,
+        0.7557
+      ],
+      "n": 52000
+    },
+    "withheld_rate_vs_clean": {
+      "auc": 0.6491,
+      "ci95": [
+        0.6439,
+        0.6543
+      ],
+      "n": 48200
+    },
+    "withheld_both": {
+      "auc": 0.6855,
+      "ci95": [
+        0.6637,
+        0.7084
+      ],
+      "n": 8000
+    },
+    "withheld_band_rate02_vs_clean": {
+      "auc": 0.5756,
+      "ci95": [
+        0.5659,
+        0.5859
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate05_vs_clean": {
+      "auc": 0.6059,
+      "ci95": [
+        0.5972,
+        0.6146
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate20_vs_clean": {
+      "auc": 0.7223,
+      "ci95": [
+        0.7146,
+        0.7294
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate40_vs_clean": {
+      "auc": 0.842,
+      "ci95": [
+        0.8364,
+        0.8479
+      ],
+      "n": 16000
+    },
+    "withheld_band_rate60_vs_clean": {
+      "auc": 0.892,
+      "ci95": [
+        0.8871,
+        0.8971
+      ],
+      "n": 16000
+    },
+    "strength_check": {
+      "auc": 0.5338,
+      "definition": "AUC(hard-negative vs rate 0), test + heldout_band"
+    }
+  },
+  "comparison_withheld_band_auc": {
+    "A0g LightGBM detector (same grouped split)": 0.6876
+  },
+  "per_move_localization_withheld_band": {
+    "hit_at_1": 0.1935,
+    "random_hit_at_1": 0.2428,
+    "ply_auc": 0.5159,
+    "note": "per-move instance logits localize substituted moves at or below chance; the app does not use them for critical moves"
+  },
+  "features": [
+    "r_hat_suspect",
+    "r_hat_other",
+    "dev_signed",
+    "d_t",
+    "alpha_n",
+    "run_mean",
+    "run_std",
+    "first_diff",
+    "second_diff",
+    "is_capture",
+    "is_check",
+    "material_balance",
+    "clock_remaining",
+    "clock_delta",
+    "clock_delta_missing",
+    "is_suspect_move",
+    "ply_pos"
+  ],
+  "features_not_standardized": [
+    "is_capture",
+    "is_check",
+    "clock_delta_missing",
+    "is_suspect_move",
+    "ply_pos"
+  ],
+  "feature_definitions": {
+    "r_hat_suspect": "rating model's per-ply estimate for the suspect side (Elo scale)",
+    "r_hat_other": "rating model's per-ply estimate for the other side",
+    "dev_signed": "r_hat_suspect minus the suspect side's baseline (corpus: Maia band)",
+    "d_t": "absolute value of dev_signed",
+    "alpha_n": "rating model attention weight at this ply times the number of plies scored",
+    "run_mean": "running mean of r_hat_suspect up to this ply",
+    "run_std": "running standard deviation of r_hat_suspect up to this ply",
+    "first_diff": "r_hat_suspect minus its previous-ply value (0 at ply 0)",
+    "second_diff": "first_diff minus its previous-ply value (0 at ply 0)",
+    "is_capture": "the move played at this ply captures",
+    "is_check": "the move played at this ply gives check",
+    "material_balance": "material before the move (P1 N3 B3 R5 Q9), suspect side's point of view",
+    "clock_remaining": "remaining clock in seconds after this ply",
+    "clock_delta": "same-side clock two plies back minus this ply's clock (NaN when either is missing or ply < 2)",
+    "clock_delta_missing": "clock_delta is NaN",
+    "is_suspect_move": "this ply belongs to the side being scored",
+    "ply_pos": "0-based ply index divided by 100"
+  },
+  "standardization": {
+    "source": "mean/std over training-split plies (scores.npz feat_mu, feat_sd); non-finite values set to 0 after standardizing",
+    "mean": [
+      1675.712890625,
+      1675.7095947265625,
+      168.82801818847656,
+      339.1000061035156,
+      0.9999998807907104,
+      1575.4140625,
+      158.64666748046875,
+      1.9622091054916382,
+      -0.7777552008628845,
+      0.0,
+      0.0,
+      0.555830180644989,
+      166.3224639892578,
+      4.0369181632995605,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "std": [
+      450.97283935546875,
+      450.89935302734375,
+      414.931884765625,
+      292.7157897949219,
+      2.2945971488952637,
+      427.4530944824219,
+      69.22057342529297,
+      182.00796508789062,
+      312.719482421875,
+      1.0,
+      1.0,
+      4.981884002685547,
+      185.92860412597656,
+      9.205301284790039,
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+}
