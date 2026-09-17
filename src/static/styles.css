@@ -1455,6 +1455,49 @@ input:focus {
   color: var(--chip-high-text);
 }
 
+/* Secondary line for the first method tried (S_att), under the main bars. */
+.suspicion-computed-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.suspicion-computed-row[hidden] {
+  display: none;
+}
+
+.suspicion-computed-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.suspicion-computed-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.suspicion-computed-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.suspicion-computed-row .suspicion-label-chip {
+  padding: 1px 6px;
+}
+
+.suspicion-computed-row .suspicion-label-chip[hidden] {
+  display: none;
+}
+
 /* --- Move list ----------------------------------------------------------------- */
 
 .move-list-panel {

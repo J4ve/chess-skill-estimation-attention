@@ -41,11 +41,11 @@ const METRIC_INFO = {
   },
   baseline: {
     term: "Baseline and its source",
-    text: "The pre-game rating the suspicion score compares each move against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess.",
+    text: "The pre-game rating both suspicion scores measure each side against: a reviewer-entered value, the PGN header, or (least reliable) the model's own final guess.",
   },
   deviation: {
     term: "Deviation from baseline",
-    text: "How many rating points this move's estimate differs from that side's baseline. Large deviations on moves the model paid a lot of attention to push the suspicion score up.",
+    text: "How many rating points this move's estimate differs from that side's baseline. Large deviations on moves the model paid a lot of attention to push the computed score (S_att) up and rank moves as critical.",
   },
   attention: {
     term: "Attention weight and rank",
@@ -56,12 +56,16 @@ const METRIC_INFO = {
     text: "A move flagged for closer human review because it ranks top by attention times rating deviation. Plies before ply 10 are excluded from the ranking. It is a pointer to look at, not a verdict.",
   },
   suspicion: {
-    term: "Suspicion score (S_att)",
-    text: "The attention-weighted average gap, in rating points, between the model's per-move estimate and the player's baseline over the whole game. It is a supplementary flag for human review, not proof of cheating: in thesis evaluation it separated engine-substituted games only weakly (ROC-AUC 0.555 on synthetic data).",
+    term: "Suspicion score (detector)",
+    text: "A trained detector's score from 0 to 1 for how much this side's play resembles games with engine moves inserted, read from the rating model's per-move estimates and attention plus simple board and clock facts. It is a review aid, not proof of cheating, and not a calibrated probability: on synthetic games from rating bands withheld from training it reached ROC-AUC about 0.75, falling to about 0.58 and 0.61 when only 2 and 5 percent of moves were engine moves (about 0.89 at 60 percent).",
+  },
+  computedScore: {
+    term: "Computed score (S_att, first method)",
+    text: "The first method tried: the attention-weighted average gap, in rating points, between the model's per-move estimate and the player's baseline. It has no trained parameters and separated engine-substituted games only weakly in thesis evaluation (ROC-AUC 0.555 on synthetic data), so it is shown for comparison only. Its labels use its own cutoffs.",
   },
   suspicionLabel: {
     term: "Typical / Unusual / Highly unusual",
-    text: "Compares this side's suspicion score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile, Unusual is the 75th to 95th, and Highly unusual is above the 95th. It describes how uncommon the score is, not whether anyone cheated; a clean synthetic game in thesis evaluation scored well into the highly-unusual range.",
+    text: "Compares this side's detector score with ordinary rated games from the thesis held-out test set: Typical is below the 75th percentile, Unusual is the 75th to 95th, and Highly unusual is above the 95th. It describes how uncommon the score is, not whether anyone cheated; a clean synthetic game can still land in the highly-unusual range.",
   },
   suspicionProvisional: {
     term: "Provisional cutoffs",
@@ -93,7 +97,7 @@ const METRIC_INFO = {
   },
   syntheticMarkers: {
     term: "Engine-move markers",
-    text: "On a synthetic sample, a marked ply is one where the move was swapped for a stronger engine's move, known for certain because the game was built that way. Both sides can still score high, because the rating model reads Maia's play as a much stronger player than its nominal band. Real games never carry this marker.",
+    text: "On a synthetic sample, a marked ply is one where the move was swapped for a stronger engine's move, known for certain because the game was built that way. The scores can still miss such a game or flag a clean one, as the missed and false-alarm samples show. Real games never carry this marker.",
   },
 };
 
@@ -857,8 +861,14 @@ function renderSampleMetaBox(sampleMeta) {
   if (sampleMeta.engine) {
     rows.push(["Engine", escapeHtml(sampleMeta.engine)]);
   }
+  if (sampleMeta.suspect_color) {
+    rows.push(["Suspect side", escapeHtml(sampleMeta.suspect_color === "white" ? "White" : "Black")]);
+  }
+  if (typeof sampleMeta.detector_eval === "number") {
+    rows.push([`Saved detector score ${infoIconHtml("suspicion")}`, sampleMeta.detector_eval.toFixed(2)]);
+  }
   if (typeof sampleMeta.s_att_eval === "number") {
-    rows.push([`Saved S_att ${infoIconHtml("suspicion")}`, sampleMeta.s_att_eval.toFixed(1)]);
+    rows.push([`Saved S_att ${infoIconHtml("computedScore")}`, sampleMeta.s_att_eval.toFixed(1)]);
   }
 
   const expanded = state.sampleMetaExpanded;
@@ -885,25 +895,49 @@ function renderSampleMetaBox(sampleMeta) {
   });
 }
 
+// The main score is the trained detector (0 to 1) unless the server could not
+// load it, in which case the API reports suspicion_score_kind "computed" and the
+// main bar falls back to S_att in rating points.
+function isDetectorScore(result) {
+  return result.suspicion_score_kind === "detector";
+}
+
+function formatScore(score, detector) {
+  return detector ? score.toFixed(2) : score.toFixed(1);
+}
+
+function computedGapTitle(score, baseline, source) {
+  return (
+    `About ${Math.round(score)} rating points of attention-weighted gap from the baseline ` +
+    `(${maskedOrRounded(baseline)}, ${formatSource(source)})`
+  );
+}
+
 function renderSuspicion(result) {
   const whiteScore = result.white_suspicion_score;
   const blackScore = result.black_suspicion_score;
   const cutoffsUsed = result.suspicion_cutoffs_used;
+  const detector = isDetectorScore(result);
 
-  $("white-suspicion-value").textContent = whiteScore.toFixed(1);
-  $("black-suspicion-value").textContent = blackScore.toFixed(1);
-  const gapTitle = (score, baseline, source) =>
-    `About ${Math.round(score)} rating points of attention-weighted gap from the baseline ` +
-    `(${maskedOrRounded(baseline)}, ${formatSource(source)})`;
-  $("white-suspicion-value").title = gapTitle(whiteScore, result.white_baseline, result.white_baseline_source);
-  $("black-suspicion-value").title = gapTitle(blackScore, result.black_baseline, result.black_baseline_source);
+  $("white-suspicion-value").textContent = formatScore(whiteScore, detector);
+  $("black-suspicion-value").textContent = formatScore(blackScore, detector);
+  const mainTitle = (score, baseline, source) =>
+    detector
+      ? `Detector score ${score.toFixed(2)} on a 0 to 1 scale (higher looks more engine-like; not a probability of cheating), ` +
+        `against baseline ${maskedOrRounded(baseline)} (${formatSource(source)})`
+      : computedGapTitle(score, baseline, source);
+  $("white-suspicion-value").title = mainTitle(whiteScore, result.white_baseline, result.white_baseline_source);
+  $("black-suspicion-value").title = mainTitle(blackScore, result.black_baseline, result.black_baseline_source);
+  $("suspicion-info").dataset.infoKey = detector ? "suspicion" : "computedScore";
 
   $("suspicion-baseline-warning").hidden = ![result.white_baseline_source, result.black_baseline_source].includes(
     "self_prediction_fallback"
   );
 
-  renderSuspicionScale("white", whiteScore, result.white_suspicion_label, cutoffsUsed, result.provisional);
-  renderSuspicionScale("black", blackScore, result.black_suspicion_label, cutoffsUsed, result.provisional);
+  const scaleMax = detector ? 1 : null;
+  renderSuspicionScale("white", whiteScore, result.white_suspicion_label, cutoffsUsed, result.provisional, scaleMax);
+  renderSuspicionScale("black", blackScore, result.black_suspicion_label, cutoffsUsed, result.provisional, scaleMax);
+  renderComputedScoreLine(result, detector);
 
   $("suspicion-label-info").hidden = !cutoffsUsed;
   const isProvisional = Boolean(cutoffsUsed && cutoffsUsed.provisional);
@@ -915,12 +949,34 @@ function renderSuspicion(result) {
   }
 }
 
+// The first method tried (S_att), as one secondary line under the main bars.
+// Hidden when the main bar is already showing S_att.
+function renderComputedScoreLine(result, detector) {
+  const row = $("suspicion-computed-row");
+  const available = detector && typeof result.white_computed_score === "number";
+  row.hidden = !available;
+  if (!available) {
+    return;
+  }
+  for (const side of ["white", "black"]) {
+    const value = $(`${side}-computed-value`);
+    value.textContent = result[`${side}_computed_score`].toFixed(1);
+    value.title = computedGapTitle(
+      result[`${side}_computed_score`], result[`${side}_baseline`], result[`${side}_baseline_source`]
+    );
+    renderSuspicionLabelChip(`${side}-computed`, result[`${side}_computed_label`], result.provisional);
+  }
+  const computedCutoffs = result.computed_cutoffs_used;
+  $("computed-provisional-note").hidden = !(computedCutoffs && computedCutoffs.provisional);
+}
+
 // Renders one side's suspicion score as a segmented Typical/Unusual/Highly
 // unusual scale (colour zones sized from the resolved p75/p95 cutoffs) with
-// a marker at the score's position, plus the matching label chip. The scale
+// a marker at the score's position, plus the matching label chip. A bounded
+// score (the detector, 0 to 1) passes its own scaleMax; otherwise the scale
 // max is max(score, 1.6 * p95) so all three zones stay visible regardless of
 // how far the score sits above p95.
-function renderSuspicionScale(prefix, score, label, cutoffs, provisional) {
+function renderSuspicionScale(prefix, score, label, cutoffs, provisional, fixedScaleMax = null) {
   const marker = $(`${prefix}-suspicion-marker`);
   const zoneTypical = $(`${prefix}-zone-typical`);
   const zoneUnusual = $(`${prefix}-zone-unusual`);
@@ -937,7 +993,7 @@ function renderSuspicionScale(prefix, score, label, cutoffs, provisional) {
 
   const p75 = cutoffs.p75;
   const p95 = cutoffs.p95;
-  const scaleMax = Math.max(score, 1.6 * p95, p95 + 1);
+  const scaleMax = fixedScaleMax !== null ? Math.max(fixedScaleMax, score) : Math.max(score, 1.6 * p95, p95 + 1);
   const typicalPct = clampPct((p75 / scaleMax) * 100);
   const unusualPct = clampPct(((p95 - p75) / scaleMax) * 100);
   const highlyUnusualPct = Math.max(0, 100 - typicalPct - unusualPct);
@@ -948,7 +1004,10 @@ function renderSuspicionScale(prefix, score, label, cutoffs, provisional) {
 
   marker.hidden = false;
   marker.style.left = `${clampPct((score / scaleMax) * 100)}%`;
-  marker.title = `${score.toFixed(1)} (Typical below ${p75.toFixed(0)}, Highly unusual above ${p95.toFixed(0)})`;
+  const digits = fixedScaleMax !== null ? 2 : 0;
+  marker.title =
+    `${score.toFixed(digits === 2 ? 2 : 1)} (Typical below ${p75.toFixed(digits)}, ` +
+    `Highly unusual above ${p95.toFixed(digits)})`;
 
   renderSuspicionLabelChip(prefix, label, provisional);
 }

@@ -1,5 +1,5 @@
 {
-  "schema_notes": "Each entry describes one sample game for the picker. Required: id, title, description, pgn_path (relative to src/static/samples/). Optional: group (picker section heading), time_control, white_rating, black_rating (display-only, usually from the PGN headers). Optional fields for thesis-corpus provenance: source ('test partition' or 'synthetic corpus'), selection_label (one of 'best-predicted', 'typical', 'worst-predicted', 'synthetic: caught', 'synthetic: false alarm', 'synthetic: missed'), white_test_error / black_test_error (this game's held-out test MAE in rating points, per side, as measured during thesis evaluation), white_actual_rating / black_actual_rating (ground-truth rating used for evaluation, which may differ from any PGN Elo header). substituted_plies (array of 1-indexed plies) marks engine-substituted moves for a synthetic-corpus game as ground truth on the board, move list, and chart; leave empty for a real game. Synthetic-corpus-only: substitution_rate, maia_band, engine, s_att_eval (the suspicion score recorded during thesis evaluation, to compare against this app's own computed score).",
+  "schema_notes": "Each entry describes one sample game for the picker. Required: id, title, description, pgn_path (relative to src/static/samples/). Optional: group (picker section heading), time_control, white_rating, black_rating (display-only, usually from the PGN headers). Optional fields for thesis-corpus provenance: source ('test partition' or 'synthetic corpus'), selection_label (one of 'best-predicted', 'typical', 'worst-predicted', 'synthetic: caught', 'synthetic: false alarm', 'synthetic: missed'), white_test_error / black_test_error (this game's held-out test MAE in rating points, per side, as measured during thesis evaluation), white_actual_rating / black_actual_rating (ground-truth rating used for evaluation, which may differ from any PGN Elo header). substituted_plies (array of 1-indexed plies) marks engine-substituted moves for a synthetic-corpus game as ground truth on the board, move list, and chart; leave empty for a real game. Synthetic-corpus-only: substitution_rate, maia_band, engine, suspect_color (the corpus suspect side: the side whose moves were eligible for substitution, or would have been in a clean game), corpus_game (source pickle), detector_eval (the suspect side's detector score recorded in the thesis A3g evaluation run, for v2 corpus games), s_att_eval (the computed score S_att recorded during thesis evaluation). Selection labels for synthetic games describe the default score (the trained detector) against the Highly unusual (p95) and Typical (p75) cutoffs. 'archived' holds superseded sample entries, never shown in the picker: each keeps its PGN file in the repo and adds archived_date, archived_reason and score_at_selection.",
   "samples": [
     {
       "id": "bullet-best-predicted",
@@ -157,7 +157,7 @@
     {
       "id": "synthetic-caught",
       "title": "Synthetic anomaly: caught",
-      "description": "A synthetic game with 60 percent of one side's moves swapped for engine moves, flagged above the detection threshold.",
+      "description": "A synthetic game (anomaly corpus v1) with 60 percent of White's moves swapped for Lc0 moves; the detector scores White well above the Highly unusual cutoff.",
       "pgn_path": "samples/synthetic_caught.pgn",
       "group": "Synthetic anomaly",
       "time_control": null,
@@ -196,10 +196,75 @@
       "substitution_rate": 0.6,
       "maia_band": 1100,
       "engine": "lc0",
-      "s_att_eval": 1198.14
+      "s_att_eval": 1198.14,
+      "suspect_color": "white"
     },
     {
       "id": "synthetic-false-alarm",
+      "title": "Synthetic anomaly: false alarm",
+      "description": "A synthetic game (anomaly corpus v2, a rating band the detector never trained on) with no engine moves at all, whose Black side still scores above the Highly unusual cutoff.",
+      "pgn_path": "samples/synthetic_false_alarm_v2.pgn",
+      "group": "Synthetic anomaly",
+      "time_control": "bullet",
+      "white_rating": 1700,
+      "black_rating": 1700,
+      "source": "synthetic corpus",
+      "selection_label": "synthetic: false alarm",
+      "white_test_error": null,
+      "black_test_error": null,
+      "white_actual_rating": 1700,
+      "black_actual_rating": 1700,
+      "substituted_plies": [],
+      "substitution_rate": 0.0,
+      "maia_band": 1700,
+      "engine": null,
+      "suspect_color": "black",
+      "corpus_game": "anomaly_corpus_v2/1700_stockfish16_r00/game_00547.pkl",
+      "detector_eval": 0.8916
+    },
+    {
+      "id": "synthetic-missed",
+      "title": "Synthetic anomaly: missed",
+      "description": "A synthetic game (anomaly corpus v2, a rating band the detector never trained on) where 15 of Black's 34 eligible moves were swapped for Stockfish 16 moves, yet Black scores Typical.",
+      "pgn_path": "samples/synthetic_missed_v2.pgn",
+      "group": "Synthetic anomaly",
+      "time_control": "blitz",
+      "white_rating": 1300,
+      "black_rating": 1300,
+      "source": "synthetic corpus",
+      "selection_label": "synthetic: missed",
+      "white_test_error": null,
+      "black_test_error": null,
+      "white_actual_rating": 1300,
+      "black_actual_rating": 1300,
+      "substituted_plies": [
+        20,
+        24,
+        26,
+        34,
+        40,
+        44,
+        46,
+        48,
+        50,
+        58,
+        66,
+        70,
+        74,
+        78,
+        82
+      ],
+      "substitution_rate": 0.4,
+      "maia_band": 1300,
+      "engine": "stockfish16",
+      "suspect_color": "black",
+      "corpus_game": "anomaly_corpus_v2/1300_stockfish16_r40/game_00168.pkl",
+      "detector_eval": 0.25
+    }
+  ],
+  "archived": [
+    {
+      "id": "synthetic-false-alarm-s-att",
       "title": "Synthetic anomaly: false alarm",
       "description": "A synthetic game with no substituted moves, whose suspicion score still lands above the detection threshold.",
       "pgn_path": "samples/synthetic_false_alarm.pgn",
@@ -217,10 +282,13 @@
       "substitution_rate": 0.0,
       "maia_band": 1300,
       "engine": null,
-      "s_att_eval": 1097.49
+      "s_att_eval": 1097.49,
+      "archived_date": "2026-09-17",
+      "archived_reason": "Superseded 2026-09-17 when the trained detector became the default score: this clean game scores Typical on both sides under the detector (White 0.355, Black 0.297), so it no longer illustrates a false alarm. It was the false-alarm example for the computed score S_att.",
+      "score_at_selection": "s_att"
     },
     {
-      "id": "synthetic-missed",
+      "id": "synthetic-missed-s-att",
       "title": "Synthetic anomaly: missed",
       "description": "A synthetic game with 30 percent of one side's moves swapped for engine moves, whose suspicion score stays below the clean-game median.",
       "pgn_path": "samples/synthetic_missed.pgn",
@@ -250,7 +318,10 @@
       "substitution_rate": 0.3,
       "maia_band": 1700,
       "engine": "lc0",
-      "s_att_eval": 39.19
+      "s_att_eval": 39.19,
+      "archived_date": "2026-09-17",
+      "archived_reason": "Superseded 2026-09-17 when the trained detector became the default score: the detector scores its engine-assisted Black side 0.877 (Highly unusual), so it is now caught rather than missed. It was the missed example for the computed score S_att.",
+      "score_at_selection": "s_att"
     }
   ]
 }
