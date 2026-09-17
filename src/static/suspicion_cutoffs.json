@@ -1,0 +1,99 @@
+{
+  "score": "detector_a3g_seed0",
+  "score_description": "Trained per-move detector (thesis arm A3g, seed 0): game-level output in [0, 1] per side. Not the computed attention-weighted score S_att, whose cutoffs live in suspicion_cutoffs_s_att.json.",
+  "generated_date": "2026-09-17",
+  "detector_weights": "src/models/detector_a3g_seed0.pt",
+  "detector_weights_md5": "05dd93a10b62e5c8f9195535294762fa",
+  "checkpoint": "models/preflight_check_2m/best_model.pth",
+  "checkpoint_md5": "fcb38b8a6a3ee04a6b1859dd5bc69b75",
+  "provisional": false,
+  "source_description": "Stratified sample of held-out TEST-partition games from the thesis corpus (analysis/heldout_test_eval/attn_tuned__best.csv on the HPC checkout; seed 20260915; up to 700 games each for bullet, blitz and rapid, every available classical and ultrabullet game; months with unpacked game files only; at least 20 plies). 2822 games (5644 sides) scored on CPU with the prototype's own src/detector.py and the frozen rating checkpoint, each side as the suspect against its PGN-header rating. The rating model never trained on these games, and the detector trained only on synthetic games.",
+  "note": "These cutoffs describe how the detector score is distributed across ordinary, finished, rated human games in the held-out test set. They are not a cheat-detection threshold: the detector reached ROC-AUC about 0.75 on synthetic games from rating bands withheld from training, but only about 0.58 and 0.61 when 2 and 5 percent of moves were engine moves.",
+  "bootstrap_resamples": 2000,
+  "min_sides_for_time_control_cutoff": 300,
+  "overall": {
+    "n_sides": 5644,
+    "p75": 0.4805,
+    "p75_ci": [
+      0.4678,
+      0.4929
+    ],
+    "p95": 0.8227,
+    "p95_ci": [
+      0.8084,
+      0.8336
+    ]
+  },
+  "by_time_control": {
+    "blitz": {
+      "n_sides": 1330,
+      "p75": 0.4841,
+      "p75_ci": [
+        0.468,
+        0.504
+      ],
+      "p95": 0.7862,
+      "p95_ci": [
+        0.7567,
+        0.82
+      ],
+      "use_overall": false
+    },
+    "bullet": {
+      "n_sides": 1346,
+      "p75": 0.4949,
+      "p75_ci": [
+        0.4669,
+        0.5184
+      ],
+      "p95": 0.8317,
+      "p95_ci": [
+        0.7941,
+        0.8522
+      ],
+      "use_overall": false
+    },
+    "classical": {
+      "n_sides": 1230,
+      "p75": 0.4683,
+      "p75_ci": [
+        0.4455,
+        0.4986
+      ],
+      "p95": 0.8378,
+      "p95_ci": [
+        0.8172,
+        0.8609
+      ],
+      "use_overall": false
+    },
+    "rapid": {
+      "n_sides": 1306,
+      "p75": 0.4717,
+      "p75_ci": [
+        0.4433,
+        0.5028
+      ],
+      "p95": 0.8105,
+      "p95_ci": [
+        0.7811,
+        0.8351
+      ],
+      "use_overall": false
+    },
+    "ultrabullet": {
+      "n_sides": 432,
+      "p75": 0.4722,
+      "p75_ci": [
+        0.4398,
+        0.4956
+      ],
+      "p95": 0.8309,
+      "p95_ci": [
+        0.7873,
+        0.8675
+      ],
+      "use_overall": false
+    }
+  }
+}
