@@ -1072,6 +1072,7 @@ function renderSuspicion(result) {
   if (!available) {
     for (const side of ["white", "black"]) {
       $(`${side}-suspicion-value`).textContent = "-";
+      delete $(`${side}-suspicion-value`).dataset.score;
       $(`${side}-suspicion-value`).title = "This method is not available on this server";
       renderSuspicionScale(side, 0, null, null, result.provisional);
     }
@@ -1088,6 +1089,7 @@ function renderSuspicion(result) {
     const score = entry[`${side}_score`];
     const value = $(`${side}-suspicion-value`);
     value.textContent = formatScore(score, unit);
+    value.dataset.score = String(score); // full precision, for tests/test_browser_regression.py
     value.title = unit
       ? `${methodName} ${score.toFixed(2)} on a 0 to 1 scale (higher looks more engine-like; not a probability of cheating), ` +
         `against baseline ${maskedOrRounded(result[`${side}_baseline`])} (${formatSource(result[`${side}_baseline_source`])})`

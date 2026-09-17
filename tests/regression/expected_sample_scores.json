@@ -1,0 +1,486 @@
+{
+ "note": "Write tests/regression/expected_sample_scores.json, the browser regression",
+ "tolerance": 0.0001,
+ "samples": [
+  {
+   "id": "bullet-best-predicted",
+   "title": "Bullet best-predicted example",
+   "pgn_path": "samples/bullet_best_predicted.pgn",
+   "time_control_bucket": "bullet",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 67.3233,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 67.2673,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.705131,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.292711,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.422638,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.178359,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.403975,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.344398,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "bullet-typical",
+   "title": "Bullet typical example",
+   "pgn_path": "samples/bullet_typical.pgn",
+   "time_control_bucket": "bullet",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 263.8601,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 264.3301,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.570588,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.574148,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.462272,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.499602,
+     "black_label": "unusual"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.510408,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.580819,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "bullet-worst-predicted",
+   "title": "Bullet worst-predicted example",
+   "pgn_path": "samples/bullet_worst_predicted.pgn",
+   "time_control_bucket": "bullet",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 365.668,
+     "source": "app",
+     "white_label": "unusual",
+     "black_score": 447.0365,
+     "black_label": "unusual"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.779809,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.397389,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.447734,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.149612,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.886955,
+     "source": "hpc_code_path",
+     "white_label": "highly_unusual",
+     "black_score": 0.887543,
+     "black_label": "highly_unusual"
+    }
+   }
+  },
+  {
+   "id": "blitz-best-predicted",
+   "title": "Blitz best-predicted example",
+   "pgn_path": "samples/blitz_best_predicted.pgn",
+   "time_control_bucket": "blitz",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 98.6369,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 98.9196,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.549863,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.440815,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.338154,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.425406,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.571291,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.560818,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "blitz-typical",
+   "title": "Blitz typical example",
+   "pgn_path": "samples/blitz_typical.pgn",
+   "time_control_bucket": "blitz",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 376.315,
+     "source": "app",
+     "white_label": "unusual",
+     "black_score": 347.596,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.696088,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.394835,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.893026,
+     "source": "hpc_code_path",
+     "white_label": "highly_unusual",
+     "black_score": 0.25562,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.68178,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.112246,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "blitz-worst-predicted",
+   "title": "Blitz worst-predicted example",
+   "pgn_path": "samples/blitz_worst_predicted.pgn",
+   "time_control_bucket": "blitz",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 1757.8695,
+     "source": "app",
+     "white_label": "highly_unusual",
+     "black_score": 1681.3573,
+     "black_label": "highly_unusual"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.416299,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.694185,
+     "black_label": "unusual"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.664791,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.339782,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.591876,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.352294,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "rapid-best-predicted",
+   "title": "Rapid best-predicted example",
+   "pgn_path": "samples/rapid_best_predicted.pgn",
+   "time_control_bucket": "rapid",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 371.0178,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 372.4813,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.432723,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.628106,
+     "black_label": "unusual"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.367735,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.546354,
+     "black_label": "unusual"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.485494,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.703417,
+     "black_label": "unusual"
+    }
+   }
+  },
+  {
+   "id": "rapid-typical",
+   "title": "Rapid typical example",
+   "pgn_path": "samples/rapid_typical.pgn",
+   "time_control_bucket": "rapid",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 235.2804,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 219.2126,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.365749,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.594772,
+     "black_label": "unusual"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.321525,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.293129,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.671031,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.763769,
+     "black_label": "unusual"
+    }
+   }
+  },
+  {
+   "id": "rapid-worst-predicted",
+   "title": "Rapid worst-predicted example",
+   "pgn_path": "samples/rapid_worst_predicted.pgn",
+   "time_control_bucket": "rapid",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 1006.5679,
+     "source": "app",
+     "white_label": "highly_unusual",
+     "black_score": 1292.6003,
+     "black_label": "highly_unusual"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.453497,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.536784,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.38568,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.799591,
+     "black_label": "unusual"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.542446,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.387257,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "synthetic-caught",
+   "title": "Synthetic anomaly: caught",
+   "pgn_path": "samples/synthetic_caught.pgn",
+   "time_control_bucket": "bullet",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 1198.1406,
+     "source": "app",
+     "white_label": "highly_unusual",
+     "black_score": 1200.3435,
+     "black_label": "highly_unusual"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.743125,
+     "source": "hpc_code_path",
+     "white_label": "unusual",
+     "black_score": 0.393197,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.948874,
+     "source": "hpc_code_path",
+     "white_label": "highly_unusual",
+     "black_score": 0.276653,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.812938,
+     "source": "hpc_code_path",
+     "white_label": "highly_unusual",
+     "black_score": 0.549849,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "synthetic-false-alarm",
+   "title": "Synthetic anomaly: false alarm",
+   "pgn_path": "samples/synthetic_false_alarm_v2.pgn",
+   "time_control_bucket": "bullet",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 131.645,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 132.0622,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.368943,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.539478,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.235945,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.891577,
+     "black_label": "highly_unusual"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.251938,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.344666,
+     "black_label": "typical"
+    }
+   }
+  },
+  {
+   "id": "synthetic-missed",
+   "title": "Synthetic anomaly: missed",
+   "pgn_path": "samples/synthetic_missed_v2.pgn",
+   "time_control_bucket": "blitz",
+   "methods": {
+    "s_att": {
+     "scale": "rating_points",
+     "white_score": 281.9398,
+     "source": "app",
+     "white_label": "typical",
+     "black_score": 283.7218,
+     "black_label": "typical"
+    },
+    "lgbm_a0g": {
+     "scale": "unit",
+     "white_score": 0.415146,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.388459,
+     "black_label": "typical"
+    },
+    "detector_a3g_seed0": {
+     "scale": "unit",
+     "white_score": 0.385702,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.249967,
+     "black_label": "typical"
+    },
+    "cnn_bilstm_a4": {
+     "scale": "unit",
+     "white_score": 0.494937,
+     "source": "hpc_code_path",
+     "white_label": "typical",
+     "black_score": 0.395801,
+     "black_label": "typical"
+    }
+   }
+  }
+ ]
+}
