@@ -533,8 +533,15 @@ function buildSampleCard(sample) {
     badge.textContent = badgeLine;
     main.appendChild(badge);
   }
-  main.addEventListener("click", () => loadAndAnalyzeSample(sample, card));
   card.appendChild(main);
+  // The whole card is the click target, not just its title line; the inner
+  // button keeps the card keyboard-reachable and its click bubbles up here.
+  // The "more" toggle stops propagation, so it never loads the sample.
+  card.addEventListener("click", (evt) => {
+    if (window.getSelection && String(window.getSelection()).length) return;
+    if (evt.target.closest(".more-toggle")) return;
+    loadAndAnalyzeSample(sample, card);
+  });
 
   if (sample.description) {
     card.appendChild(buildMoreToggleLine("sample-card-desc", sample.description));

@@ -461,6 +461,39 @@ input:focus {
   padding: 0 var(--space-4);
 }
 
+/* Empty state (nothing analyzed yet): the bar alone on a blank page reads as
+   an unfinished stub, so give it room and a one-line intro until a game loads.
+   Everything here is scoped to the panel while #results-panel is still hidden. */
+.input-panel-intro {
+  display: none;
+}
+
+body:has(#results-panel[hidden]) .input-panel {
+  padding-block: 24px var(--space-4);
+  min-height: 210px;
+}
+
+body:has(#results-panel[hidden]) .input-row {
+  max-width: 1100px;
+}
+
+body:has(#results-panel[hidden]) .brand {
+  font-size: calc(var(--fs-lg) * 1.35);
+}
+
+body:has(#results-panel[hidden]) .input-panel-intro {
+  display: block;
+  max-width: 1100px;
+  margin: var(--space-3) auto 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+body:has(#results-panel[hidden]) .tab-panel.samples-panel {
+  padding-top: var(--space-1);
+}
+
 .input-row {
   display: flex;
   align-items: flex-start;
@@ -666,6 +699,7 @@ input:focus {
 }
 
 .sample-card {
+  cursor: pointer;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -677,6 +711,7 @@ input:focus {
 .sample-card:hover,
 .sample-card:focus-within {
   border-color: var(--accent);
+  background: var(--surface-hover);
 }
 
 .sample-card-main {
