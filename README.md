@@ -55,6 +55,10 @@ The same view in dark theme, and the sample-game picker:
 PyTorch needs Python 3.12 or 3.13. A venv outside the repo keeps its
 interpreter symlinks clear of any repo sync tooling.
 
+> `RATINGNET_CHECKPOINT` points at the frozen thesis checkpoint on disk; it
+> is read-only and never copied into the repo. See [Weights](#weights) below
+> for the alternative of placing the file directly under `models/`.
+
 ```bash
 python3.12 -m venv ~/venvs/ratingnet-web
 source ~/venvs/ratingnet-web/bin/activate
@@ -62,11 +66,7 @@ source ~/venvs/ratingnet-web/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 
-# Point at the frozen thesis checkpoint (read-only, never copied into the repo)
 export RATINGNET_CHECKPOINT=/path/to/best_model.pth
-# Or copy it into place instead of setting the env var:
-#   mkdir -p models/preflight_check_2m
-#   cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
 
 python src/api.py
 ```
@@ -92,10 +92,16 @@ curl -X POST http://localhost:8000/predict/lichess \
 ## Weights
 
 The rating checkpoint is **not committed**: set `RATINGNET_CHECKPOINT` to its
-path, or place it at `models/preflight_check_2m/best_model.pth`. The trained
-suspicion detector is small and **is** committed, with its provenance, at
-`src/models/`. See [docs/development.md](docs/development.md) for the fallback
-checkpoint, submodule use, and the training path.
+path, or place it directly at `models/preflight_check_2m/best_model.pth`:
+
+```bash
+mkdir -p models/preflight_check_2m
+cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
+```
+
+The trained suspicion detector is small and **is** committed, with its
+provenance, at `src/models/`. See [docs/development.md](docs/development.md)
+for the fallback checkpoint, submodule use, and the training path.
 
 ## Documentation
 
@@ -113,19 +119,22 @@ checkpoint, submodule use, and the training path.
 
 ## Limitations
 
-- **Suspicion score is a supplementary flag, not a verdict.** It is meant to
-  help a human fair-play reviewer decide where to look, not to accuse a
-  player automatically. See Barnes and Hernandez-Castro (2015) on the
-  false-positive risk of single-game move analysis.
+> **Suspicion score is a supplementary flag, not a verdict.** It is meant to
+> help a human fair-play reviewer decide where to look, not to accuse a
+> player automatically. See Barnes and Hernandez-Castro (2015) on the
+> false-positive risk of single-game move analysis.
+
 - **The detector learned from synthetic games only.** Its measured AUCs come
   from Maia games with inserted engine moves, not from confirmed real
   cheating cases, and it is weak when only a few moves are engine moves
   (about 0.58 at 2 percent). Its per-move outputs do not locate the engine
   moves, so the app does not use them.
-- **Mid-game values are provisional.** For an ongoing game (`Result` header
-  `*`), Lichess itself delays the export by a few moves, and any suspicion
-  score computed before the game ends should be read as provisional: it can
-  shift once more moves are known.
+
+> **Mid-game values are provisional.** For an ongoing game (`Result` header
+> `*`), Lichess itself delays the export by a few moves, and any suspicion
+> score computed before the game ends should be read as provisional: it can
+> shift once more moves are known.
+
 - **Every move re-runs the full bidirectional model over the whole prefix.**
   The model's BiLSTM has a backward pass that needs a completed sequence;
   there is no incremental/streaming inference here; scoring ply *t* means
@@ -136,12 +145,13 @@ checkpoint, submodule use, and the training path.
   sequence of independent from-scratch runs, not a true incremental
   inference; it can differ from the full-game curve for the same finished
   game.
-- **Self-prediction fallback baselines are close to meaningless.** If neither
-  the caller nor the PGN headers supply a baseline rating, the suspicion
-  score compares the model's own final-ply prediction against itself. The
-  API always reports which baseline source was used
-  (`white_baseline_source`/`black_baseline_source`) so this is visible, not
-  silent.
+
+> **Self-prediction fallback baselines are close to meaningless.** If neither
+> the caller nor the PGN headers supply a baseline rating, the suspicion
+> score compares the model's own final-ply prediction against itself. The
+> API always reports which baseline source was used
+> (`white_baseline_source`/`black_baseline_source`) so this is visible, not
+> silent.
 
 ## Thesis abstract
 
