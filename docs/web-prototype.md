@@ -177,8 +177,13 @@ distributions can never be mixed up:
   Method, table with bootstrap CIs, and the sample-game sanity check are in
   `experiments/detector_cutoffs/README.md`.
 - `src/static/suspicion_cutoffs_s_att.json` (`"score": "s_att"`): the S_att
-  cutoffs, still **provisional** (1,200 scored games from a run stopped
-  early). The secondary S_att line says "provisional" while that holds. A
+  cutoffs. 2,536 held-out test games (5,072 sides) from the same stratified
+  sample as the detector cutoffs (up to 600 each for bullet, blitz and
+  rapid, all available classical and ultrabullet games), scored on the HPC
+  CPU with the attention-weighted `AnomalyDetector`. Overall p75 382.17 and
+  p95 634.11; every time control has its own cutoff. The full sample
+  completed, so it is not provisional. Method, results table, and the
+  sample-game sanity check are in `experiments/satt_cutoffs/README.md`. A
   "Provisional cutoffs" chip in the suspicion header appears only if the
   main score's cutoffs are provisional.
 
