@@ -205,10 +205,6 @@ come from the HPC code path) and review the diff.
 > (`white_baseline_source`/`black_baseline_source`) so this is visible, not
 > silent.
 
-## Thesis abstract
-
-This thesis develops a deep-learning system that estimates a chess player's skill move-by-move in real time from board states and clock times, and simultaneously flags moves that deviate suspiciously from the player's established level as possible engine assistance. The system extends the CNN-BiLSTM rating-estimation baseline of Omori and Tadepalli with a deeper convolutional network, an attention mechanism, and a move-level anomaly-detection module, and packages the result as a real-time web prototype for human fair-play review.
-
 ## License
 
 This project is licensed under the MIT license - see LICENSE.
