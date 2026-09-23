@@ -1357,7 +1357,7 @@ function renderChart(result) {
 
   const datasets = [
     {
-      label: "White estimate",
+      label: "White estimate (not independent)",
       data: whiteRatings,
       borderColor: palette.white,
       backgroundColor: "transparent",
@@ -1365,7 +1365,7 @@ function renderChart(result) {
       borderWidth: 2,
     },
     {
-      label: "Black estimate",
+      label: "Black estimate (not independent)",
       data: blackRatings,
       borderColor: palette.black,
       backgroundColor: "transparent",
