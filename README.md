@@ -15,6 +15,28 @@ Times Using a CNN-LSTM* by Michael Omori and Prasad Tadepalli (Oregon State
 University). https://arxiv.org/abs/2409.11506
 Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_thesis).
 
+## Live deployment
+
+**https://161-118-236-156.sslip.io**
+
+This is the application itself, the FastAPI service described below, running on a
+small ARM64 server. It serves the tuned attention checkpoint on CPU and has
+outbound access to the Lichess API, so every input the prototype accepts works
+there: a pasted or uploaded PGN, a Lichess game ID, a bundled sample game, and
+live mode. In live mode it follows an ongoing game by ID or the current Lichess
+TV feature and sends a fresh per-move estimate over Server-Sent Events as each
+move is played.
+
+The host name is an `sslip.io` name, which resolves to the server's own address,
+so the certificate is publicly trusted without a domain being owned.
+
+It is a single-worker deployment sharing two vCPUs, so it is bounded: 20
+concurrent live streams and 2 per visitor, with analysis requests running two at
+a time behind a queue that returns HTTP 503 and `Retry-After` once full.
+`src/limits.py` holds those limits and reads each from the environment.
+[deploy/vps/](deploy/vps/) has the service unit, the proxy site block and the
+procedure.
+
 ## The app
 
 Stepping through a held-out test game, switching suspicion methods, in light and dark themes:
@@ -375,6 +397,8 @@ checkpoint.
   behaviour.
 - [docs/development.md](docs/development.md) - weights, submodule use,
   training path, and the upstream baseline's own README.
+- [deploy/vps/](deploy/vps/) - the live deployment: service unit, reverse-proxy
+  site block, the CPU-only torch wheel requirement on aarch64, and the limits.
 - [analysis/](analysis/) - the study's own evaluation, detector and corpus
   scripts, with a guide to which one produced which published record.
 - [analysis/scanner-rs/](analysis/scanner-rs/) - `clkscan`, the Rust scanner

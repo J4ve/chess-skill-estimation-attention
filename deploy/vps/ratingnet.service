@@ -1,0 +1,72 @@
+# /etc/systemd/system/ratingnet.service
+[Unit]
+Description=RatingNet prototype (chess skill estimation and anomaly detection)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ratingnet
+Group=ratingnet
+WorkingDirectory=/opt/ratingnet/app/src
+
+# Name the checkpoint explicitly. api.py resolves this first and raises if it is
+# missing, so the served arm can never silently fall back to model_55.pth, which
+# is not one of the study's arms.
+Environment=RATINGNET_CHECKPOINT=/opt/ratingnet/models/attn_tuned_best.pth
+# Two vCPUs total, shared with another service. Without these, torch sizes its
+# thread pools from the core count and a single inference saturates the machine.
+Environment=OMP_NUM_THREADS=2
+Environment=MKL_NUM_THREADS=2
+Environment=TORCH_NUM_THREADS=2
+
+# Visitor-shaped limits, enforced in src/limits.py. A live stream is one viewer
+# holding one upstream Lichess connection for the length of a game, so it is
+# capped per visitor as well as in total. Analysis requests are capped by queue
+# depth, so an ordinary burst waits and a flood is shed.
+Environment=RATINGNET_MAX_LIVE_STREAMS=20
+Environment=RATINGNET_MAX_LIVE_STREAMS_PER_CLIENT=2
+Environment=RATINGNET_MAX_ANALYSIS_RUNNING=2
+Environment=RATINGNET_MAX_ANALYSIS_WAITING=12
+
+# One worker: the result cache lives in this process. Bound to loopback because
+# the reverse proxy is the only thing that should reach it.
+# limit-concurrency here is only a backstop against a raw connection flood, set
+# well above the visitor limits above on purpose: one visitor opening the page is
+# already a dozen cheap asset requests, and a low value sheds a stylesheet long
+# before it sheds an inference.
+ExecStart=/opt/ratingnet/venv/bin/uvicorn api:app \
+  --host 127.0.0.1 --port 8001 \
+  --workers 1 \
+  --limit-concurrency 192 \
+  --timeout-keep-alive 10 \
+  --no-server-header \
+  --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+
+# Resource ceiling. This, not the connection count, is what keeps an inference
+# burst from starving the other service on this host.
+CPUQuota=150%
+MemoryMax=3G
+MemoryHigh=2500M
+TasksMax=256
+
+# Hardening, following the pattern the other service on this host already uses.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadWritePaths=/opt/ratingnet/app/logs
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
