@@ -5,8 +5,12 @@
 ## Frozen weights
 
 The API serves the frozen thesis checkpoint by default: `models/preflight_check_2m/best_model.pth`,
-the tuned attention arm (test MAE 171.92). It is **not committed** to git (see
-`.gitignore`).
+the tuned attention arm (test MAE 171.92). Despite the directory name, that
+experiment **is** the reported architecture; its name in the evaluation
+records is `attn_tuned`. It is **not committed** to git (see `.gitignore`);
+download it from the release, where it is published under the unambiguous
+name `attn_tuned_best.pth` with its sha256. See
+[Published artifacts](../README.md#published-artifacts).
 
 - Expected location: `models/preflight_check_2m/best_model.pth`
 - Override: set `RATINGNET_CHECKPOINT` to load an exact path instead.
@@ -16,6 +20,12 @@ the tuned attention arm (test MAE 171.92). It is **not committed** to git (see
   that checkpoint has no attention or anomaly branch.
   - Expected location: `models/model_55.pth`
   - Download: [Google Drive folder](https://drive.google.com/drive/folders/164qXisHsNAKSM6R7ZMeTeJjPpnZ7s5Rt)
+  - **`model_55.pth` is not one of this study's arms.** Its stored `params`
+    carry no `use_attention` and no `split_seed`, and its `epochs` (100) and
+    `val_batch_size` (8192) are pre-fix defaults, so anything scored with it
+    reproduces no reported number. It is deliberately left out of the
+    release. That `_discover_checkpoint()` still names it is a fallback of
+    last resort, not an endorsement.
 
 The trained suspicion detectors are small and **are committed**, each with a
 JSON provenance file next to it (HPC source paths and script hashes, split,

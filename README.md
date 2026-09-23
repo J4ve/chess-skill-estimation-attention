@@ -44,7 +44,7 @@ The same view in dark theme, and the sample-game picker:
   | --- | --- | --- | --- | --- |
   | Computed score (first method tried) | `src/anomaly.py`, S_att | 0.506 | 0.497 | 0.520 |
   | Trained detector (LightGBM) | `src/lgbm_detector.py`, A0g | 0.688 | 0.539 | 0.811 |
-  | **Per-move detector (best, default)** | `src/detector.py`, A3g | **0.752** | 0.576 | 0.892 |
+  | **Per-move detector (A3g, default)** | `src/detector.py`, A3g | **0.752** | 0.576 | 0.892 |
   | Full model (CNN-BiLSTM) | `src/cnn_bilstm_detector.py`, A4 | 0.705 | 0.547 | 0.838 |
 
   ![Suspicion card](docs/screenshots/suspicion-card.png)
@@ -106,18 +106,156 @@ curl -X POST http://localhost:8000/predict/lichess \
 
 ## Weights
 
-The rating checkpoint is **not committed**: set `RATINGNET_CHECKPOINT` to its
-path, or place it directly at `models/preflight_check_2m/best_model.pth`:
+The rating checkpoint is **not committed** to git. Download
+`attn_tuned_best.pth` from the release below, then either set
+`RATINGNET_CHECKPOINT` to its path or place it where the API looks for it by
+default:
 
 ```bash
 mkdir -p models/preflight_check_2m
-cp /path/to/best_model.pth models/preflight_check_2m/best_model.pth
+curl -L -o models/preflight_check_2m/best_model.pth \
+  https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/attn_tuned_best.pth
+sha256sum models/preflight_check_2m/best_model.pth
+# ff6370e477a0ea7264933adbf517f94068ed1205126ad284d8158ae6124275a0
 ```
 
 The trained suspicion detectors (per-move, LightGBM, CNN-BiLSTM head) are
 small and **are** committed, with their provenance, at `src/models/`. See
 [docs/development.md](docs/development.md) for the fallback checkpoint,
 submodule use, and the training path.
+
+## Published artifacts
+
+The frozen rating checkpoint and the computations behind the reported
+evaluation numbers are published as a GitHub release,
+[v0.1-weights-attn-tuned](https://github.com/J4ve/chess-skill-estimation-attention/releases/tag/v0.1-weights-attn-tuned).
+The analysis scripts that produced them are in this repository at
+[analysis/](analysis/) rather than in the release, so they can be browsed and
+diffed.
+
+### Two names that mislead, read this before loading anything
+
+> **`models/preflight_check_2m/best_model.pth` is the tuned attention arm.**
+> The directory name says "preflight check" but that experiment is the frozen
+> reported architecture: learning rate 3e-4, Bahdanau attention with
+> `attention_dim` 64, trained on the full 2,550,000 game corpus. Its identity
+> in the evaluation records is `attn_tuned`, and the release publishes the same
+> bytes under the unambiguous name `attn_tuned_best.pth`.
+
+> **`models/model_55.pth` is not one of the thesis arms.** It is a plain
+> baseline checkpoint that predates the corrections this study applied: its
+> stored `params` carry no `use_attention` and no `split_seed`, and its
+> `epochs` and `val_batch_size` are pre-fix defaults. `src/api.py` still names
+> it as a last-resort fallback when no thesis checkpoint is found, which is a
+> known defect and not an endorsement. It is deliberately **not** published,
+> because a reader who scored games with it would get numbers that match no
+> reported result.
+
+### Assets
+
+Every asset carries its sha256 below, and `SHA256SUMS.txt` in the release
+repeats them in `sha256sum -c` format, covering both the downloads and the
+files inside the two archives as they extract.
+
+| Asset | What it is | sha256 |
+| --- | --- | --- |
+| [`attn_tuned_best.pth`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/attn_tuned_best.pth) | The `attn_tuned` rating checkpoint, 9,379,970 bytes, best validation epoch 58 of a 60 epoch run | `ff6370e477a0ea7264933adbf517f94068ed1205126ad284d8158ae6124275a0` |
+| [`heldout_test_per_game_errors.tar.gz`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/heldout_test_per_game_errors.tar.gz) | Per game absolute and signed errors over the 255,000 game held out test partition, one CSV per arm for five arms, about 95 MB unpacked | `a87293fa72cd5620953869eefdb3e52198e3dd19930d0b93c0e144d0835ae919` |
+| [`eval_records.tar.gz`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/eval_records.tar.gz) | The held out evaluation JSONs, the paired bootstrap output, corpus composition, the anomaly detector arm results, and the deployment latency and agreement measurements | `68a6d2c9413b416bc5b01067c7c853c85912c9f3513cbe073be5935c839cbc4a` |
+| [`attn_tuned__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/attn_tuned__best.json) | `attn_tuned` evaluation record and `arch_params`, loose so it reads without the archive | `c7e086259b7fafb83c8bebc8cb68d57388a24982eac781259e9e3fc18f90b66c` |
+| [`attn_untuned__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/attn_untuned__best.json) | `attn_untuned` evaluation record and `arch_params` | `85a0fd424ddac37106a07d3ed2321ce4d2a08bda206049ebec9430d6f81212f1` |
+| [`baseline__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/baseline__best.json) | `baseline` evaluation record and `arch_params` | `f233636fabbfef3eef27bee18e92fa6d899da4894eaeea1f384afd53fc05f5ba` |
+| [`baseline_lr3e4__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/baseline_lr3e4__best.json) | `baseline_lr3e4` evaluation record and `arch_params` | `e47674dd866fca2723f77045aaf420ad2ea33a81f992fa66d70e7682b96d2f38` |
+| [`deepcnn__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/deepcnn__best.json) | `deepcnn` evaluation record and `arch_params` | `2cd4697aecb9afb0f7ef867d28045bdc8079d932f6caa8e89776d3487d00e2ed` |
+| [`lowdropout__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/lowdropout__best.json) | `lowdropout` evaluation record and `arch_params` | `06778437d4c9580792d1c00626c1689f737db82e050bfe1bfd2f1bc21f163693` |
+| [`SHA256SUMS.txt`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/SHA256SUMS.txt) | Checksums for every asset above and for every file inside the two archives | listed in the release notes |
+
+### Seeds
+
+The seeds are recorded in every `arch_params` block and are repeated here
+because nothing else in this repository states them:
+
+- **Training seed 0** for every full corpus arm. It is passed as `--seed`.
+- **Data split seed 42**, the `--split_seed` that fixes the 72 / 18 / 10
+  train, validation and test partition of the corpus. Where the thesis says
+  "seed 42" it means this split seed, never a training seed.
+- **Seeds 0 through 4** for the separate 170,000 game seed variance study,
+  which trained five baseline and five attention runs to check whether the
+  attention difference survived seed noise.
+
+### Reproducing a reported number
+
+The checkpoint is a dictionary, not a bare state dict. Its architecture lives
+under `params`, which is what `src/api.py`'s own `_load_model()` reads, so a
+reader never has to guess how it was configured:
+
+```python
+import torch
+from chess_rating_net import ChessEloPredictor   # run with src/ on sys.path
+
+ckpt = torch.load("attn_tuned_best.pth", map_location="cpu", weights_only=False)
+p = ckpt["params"]
+print(p["use_attention"], p["attention_type"], p["attention_dim"], p["learning_rate"])
+print(p["seed"], p["split_seed"], ckpt["best_epoch"], ckpt["best_val_loss"])
+
+model = ChessEloPredictor(
+    conv_filters=p["conv_filters"], lstm_layers=p["lstm_layers"],
+    dropout_rate=p["dropout_rate"], lstm_h=p["lstm_h"], fc1_h=p["fc1_h"],
+    bidirectional=p["bidirectional"], use_attention=p["use_attention"],
+    attention_type=p["attention_type"], attention_dim=p["attention_dim"],
+    use_anomaly=p["use_attention"],
+)
+model.load_base_state_dict(ckpt["model_state_dict"], strict=False)
+model.eval()
+```
+
+That prints `True bahdanau 64 0.0003` and `0 42 58 172.3787906438345`, which
+is how the published file identifies itself as the `attn_tuned` arm without
+trusting its directory name.
+
+Predictions are produced in normalized units and multiplied back by
+`ratings_std` 366 and shifted by `ratings_mean` 1514, the constants the
+baseline paper used. They are stored in the checkpoint and in every
+evaluation record, so a reader never has to guess them.
+
+The per game CSVs let the headline test MAE of any published arm be
+recomputed without a GPU or the corpus. Each row is one held out game, with
+`white_err` and `black_err` in rating points, and the arm's MAE is the mean
+over both columns:
+
+```python
+import csv, statistics
+errs = []
+for row in csv.DictReader(open("heldout_test_per_game_errors/attn_tuned__best.csv")):
+    errs += [float(row["white_err"]), float(row["black_err"])]
+print(len(errs) // 2, statistics.fmean(errs))
+```
+
+That prints `255000 171.9167760980392`, which is the
+`overall_mae_rating_points` recorded in `attn_tuned__best.json` down to the
+order in which the terms are summed. The rows also carry `time_control`,
+`white_elo` and `black_elo`, so per time control and per rating band
+breakdowns follow from the same files, as does a paired bootstrap between two
+arms: `analysis/paired_bootstrap_heldout.py` is this study's paired bootstrap
+over these CSVs, and `bootstrap.json` inside `eval_records.tar.gz` records the
+resample count, the seed and the per game error definition it used.
+
+### This release is partial
+
+Only the `attn_tuned` checkpoint is published. The other five arms the study
+trained are on the institutional cluster and have not been transferred yet:
+
+| Arm | Checkpoint on the cluster | Published here |
+| --- | --- | --- |
+| `attn_tuned` | `models/preflight_check_2m/best_model.pth` | weights, per game errors, evaluation record |
+| `attn_untuned` | `models/fullcorpus_attention_untuned_arm2/best_model.pth` | per game errors, evaluation record |
+| `baseline` | `models/fullcorpus_baseline_arm1/best_model.pth` | per game errors, evaluation record |
+| `baseline_lr3e4` | `models/fullcorpus_baseline_lr3e4_arm6/best_model.pth` | per game errors, evaluation record |
+| `deepcnn` | `models/fullcorpus_deepcnn_arm5/best_model.pth` | per game errors, evaluation record |
+| `lowdropout` | `models/diag_fullcorpus_lowdropout/best_model.pth` | evaluation record only |
+
+`lowdropout` is the one arm with no per game CSV, so five CSVs cover six
+arms. A later release will add the missing weights.
 
 ## Documentation
 
@@ -128,6 +266,8 @@ submodule use, and the training path.
   behaviour.
 - [docs/development.md](docs/development.md) - weights, submodule use,
   training path, and the upstream baseline's own README.
+- [analysis/](analysis/) - the study's own evaluation, detector and corpus
+  scripts, with a guide to which one produced which published record.
 - [experiments/detector_parity/](experiments/detector_parity/) - the app's
   per-move detector path reproduces the thesis HPC code to within 6e-07.
 - [experiments/method_parity/](experiments/method_parity/) - the same check
