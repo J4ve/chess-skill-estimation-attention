@@ -5,7 +5,7 @@
   "weights_file": "detector_a3g_seed0.pt",
   "weights_md5": "05dd93a10b62e5c8f9195535294762fa",
   "source": {
-    "host": "hpc.cspc.edu.ph",
+    "host": "<hpc-host>",
     "weights": "~/Bacsain/thesis2/analysis/extra_arms/A3g_seed0/model.pt",
     "results": "~/Bacsain/thesis2/analysis/extra_arms/A3g_seed0/results.json",
     "training_code": "~/Bacsain/thesis2/analysis/scripts/extra_arm_a3.py (md5 c1826c43d1a7b5c783ac51a1b454202d)",

@@ -1,0 +1,26 @@
+[package]
+name = "clkscan"
+version = "0.2.0"
+edition = "2021"
+description = "One-pass scan, reservoir-sample and extract for Lichess .pgn.zst dumps (clock-annotation eligibility + Algorithm R selection)"
+
+[lib]
+name = "clkscan"
+path = "src/lib.rs"
+
+[[bin]]
+name = "clkscan"
+path = "src/main.rs"
+
+[dependencies]
+pgn-reader = "0.26"
+zstd = "0.13"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# NOTE: `panic = "abort"` is deliberately NOT set here. It was in 0.1.0, but it
+# makes `cargo test --release` unable to run the CPython-equivalence suite,
+# and being able to run that suite against the same optimisation settings the
+# production binary uses is worth more than the small size win.

@@ -6,7 +6,7 @@
   "weights_md5": "c5a4b8ca9fb347747d47eb5721b8871b",
   "weights_contents": "lstm.*, attention.*, and the MIL head; the CNN trunk is the served rating checkpoint's own conv/bn layers (frozen during A4 training)",
   "source": {
-    "host": "hpc.cspc.edu.ph",
+    "host": "<hpc-host>",
     "weights": "~/Bacsain/thesis2/analysis/extra_arms/A4/model_best.pt",
     "results": "~/Bacsain/thesis2/analysis/extra_arms/A4/results.json (created 2026-09-15 15:31:09 +0800)",
     "training_code": "~/Bacsain/thesis2/analysis/scripts/extra_arm_a4.py (md5 05ac281e1c58cb63c935d18994cd1614)",

@@ -5,7 +5,7 @@
   "model_file": "detector_lgbm_a0g.txt",
   "model_md5": "3ae8f9d5766a09fe15fd167ada2a1f9f",
   "source": {
-    "host": "hpc.cspc.edu.ph",
+    "host": "<hpc-host>",
     "results": "~/Bacsain/thesis2/analysis/extra_arms/A0g/results.json (created 2026-09-15 13:54:16 +0800)",
     "scores": "~/Bacsain/thesis2/analysis/extra_arms/A0g/scores.npz",
     "training_code": "~/Bacsain/thesis2/analysis/scripts/extra_arm_a0.py --split grouped (md5 b114bb0fdc5fd5e6ee7e9edecb6432af)",

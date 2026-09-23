@@ -5,8 +5,8 @@ baseline-vs-attention ablation, pulled off the HPC on 2026-08-14. These are the
 raw evidence behind the headline numbers already committed to
 `chapter3-4-process.md` §4.3 ("Attention ablation (170k) — 2026-08-14").
 
-**HPC source root:** `~/Bacsain/thesis2/` on `hpc.cspc.edu.ph` (user
-`javebacsain`, conda env `ratingnet2`). All files below were copied verbatim
+**HPC source root:** `~/Bacsain/thesis2/` on `<hpc-host>` (user
+`<user>`, conda env `ratingnet2`). All files below were copied verbatim
 (`scp`) and are read-only on the HPC.
 
 ## What is here
