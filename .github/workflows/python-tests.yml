@@ -1,0 +1,49 @@
+# Run the Python test suite.
+#
+# Reports, does not gate: nothing here is wired to branch protection, so a push
+# always lands and a red run is information rather than a blocked commit.
+#
+# tests/conftest.py puts src/ on sys.path, so pytest needs no install of the
+# package itself and no PYTHONPATH. tests/test_browser_regression.py is opt-in and
+# skips unless RATINGNET_BROWSER_REGRESSION=1, which is right for CI: it needs
+# Playwright, a Chrome binary and the frozen rating checkpoint, and the checkpoint
+# is not in this repository.
+name: python tests
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/python-tests.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12 per the project's own guidance: newer interpreters have run ahead of
+      # PyTorch's wheels.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # CPU torch explicitly. requirements.txt asks for a bare "torch", which on
+      # Linux resolves to the CUDA build and drags in gigabytes of NVIDIA wheels
+      # that a CPU runner will never use. Installing the CPU wheel first satisfies
+      # the requirement, so the next step skips it.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: pytest
+        run: pytest tests/ -q

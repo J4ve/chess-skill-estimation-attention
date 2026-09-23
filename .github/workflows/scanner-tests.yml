@@ -1,0 +1,48 @@
+# Run the Rust scanner's CPython-equivalence suite.
+#
+# This one is load-bearing rather than cosmetic. analysis/scanner-rs/src/pyrandom.rs
+# is a byte-exact port of CPython's MT19937, and the corpus reservoir sample is
+# reproducible only because it reproduces random.Random(seed) exactly. If that port
+# silently drifts, the corpus behind every number in the study can no longer be
+# rebuilt. tests/py_random.rs checks it against interpreter-generated vectors and
+# needs no fixtures beyond the committed vector file.
+#
+# Reports, does not gate.
+name: scanner tests
+
+on:
+  push:
+    paths:
+      - 'analysis/scanner-rs/**'
+      - '.github/workflows/scanner-tests.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cargo-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: analysis/scanner-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cargo.lock is committed, so the dependency set is pinned and cacheable.
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            analysis/scanner-rs/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('analysis/scanner-rs/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: cargo test
+        run: cargo test --locked
+
+      # The production binary is built with lto and codegen-units=1, and the crate
+      # deliberately leaves panic="abort" unset so the same suite can run under
+      # those settings. Running it both ways is the point of that choice.
+      - name: cargo test --release
+        run: cargo test --locked --release
