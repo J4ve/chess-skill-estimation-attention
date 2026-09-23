@@ -59,7 +59,7 @@ methods = [
     },
     {
         "id": "detector_a3g_seed0",
-        "label": "Per-move detector (best, default)",
+        "label": "Per-move detector (A3g, default)",
         "short_label": "Per-move detector",
         "arm": "A3g",
         "scale": "unit",

@@ -136,7 +136,7 @@ provenance files, so no number is typed into the page.
 | --- | --- | --- | --- |
 | Computed score (first method tried) | `src/anomaly.py` (S_att) | attention and the per-move gap from baseline | rating points |
 | Trained detector (LightGBM) | `src/lgbm_detector.py` (A0g) | 97 whole-game summaries of the rating model's outputs, board and clock facts | 0 to 1 |
-| Per-move detector (best, default) | `src/detector.py` (A3g) | 17 per-ply features from the rating model's outputs, board and clock facts | 0 to 1 |
+| Per-move detector (A3g, default) | `src/detector.py` (A3g) | 17 per-ply features from the rating model's outputs, board and clock facts | 0 to 1 |
 | Full model (CNN-BiLSTM) | `src/cnn_bilstm_detector.py` (A4) | the board positions and clocks themselves | 0 to 1 |
 
 - **Computed score S_att** was the first method tried: the attention-weighted
