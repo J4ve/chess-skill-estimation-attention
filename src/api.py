@@ -47,8 +47,8 @@ if str(_SRC_DIR) not in sys.path:
 import chess.pgn
 import torch
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -68,6 +68,7 @@ from format_data import (
     time_to_seconds,
 )
 from lichess_client import LichessError, fetch_game_pgn, parse_game_id
+from limits import AnalysisBusy, AnalysisQueue, LiveStreamLimit, LiveStreamLimiter
 from live import LiveGamePrefix, sse_event, stream_game, stream_tv
 from suspicion_labels import label_for_score, resolve_cutoffs
 
@@ -313,6 +314,29 @@ app = FastAPI(
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+ANALYSIS_QUEUE = AnalysisQueue()
+LIVE_STREAMS = LiveStreamLimiter()
+
+
+@app.middleware("http")
+async def bound_analysis_queue(request, call_next):
+    # Only the analysis endpoints are metered. The page and its assets are cheap
+    # and one visitor is a dozen of them, so counting those would shed a
+    # stylesheet before it ever shed an inference. Live mode is metered at its own
+    # endpoints instead, because a stream is held open rather than served once.
+    if not request.url.path.startswith("/predict/"):
+        return await call_next(request)
+    try:
+        async with ANALYSIS_QUEUE.slot():
+            return await call_next(request)
+    except AnalysisBusy as exc:
+        return JSONResponse(
+            {"status": "error", "detail": str(exc)},
+            status_code=503,
+            headers={"Retry-After": "5"},
+        )
 
 
 @app.middleware("http")
@@ -777,8 +801,48 @@ async def _live_stream_game_events(
         yield event
 
 
+def _client_key(request: Request) -> str:
+    """Identify the caller for the per-visitor stream cap.
+
+    Behind the loopback reverse proxy, `request.client.host` is always 127.0.0.1,
+    so the forwarded address is the only thing that distinguishes visitors. Only
+    the first entry is used: the rest of an X-Forwarded-For chain is client
+    supplied and trivially spoofed.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _metered_live_stream(request: Request, generator):
+    """Hold a live-stream slot for as long as the stream runs.
+
+    A refusal is delivered as an SSE error event rather than an HTTP status, for
+    the same reason the endpoints below already report setup problems that way:
+    EventSource cannot read an error response's body, so a status alone would
+    reach the browser as an unexplained "connection lost".
+    """
+    try:
+        with LIVE_STREAMS.hold(_client_key(request)):
+            try:
+                async for event in generator:
+                    yield event
+            finally:
+                # Close the inner generator explicitly rather than leaving it to the
+                # collector: a viewer closing the tab must drop this deployment's
+                # upstream Lichess connection now, not whenever the cycle runs.
+                await generator.aclose()
+    except LiveStreamLimit as exc:
+        # Refused before the stream started, so nothing upstream was opened; closing
+        # the untouched generator is a no-op that keeps the two paths symmetrical.
+        await generator.aclose()
+        yield sse_event({"type": "error", "message": str(exc)})
+
+
 @app.get("/live/stream/{game_id}")
 async def live_stream_game(
+    request: Request,
     game_id: str,
     top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20),
     min_ply: int = Query(DEFAULT_MIN_PLY, ge=0, le=100),
@@ -796,7 +860,7 @@ async def live_stream_game(
     """
     generator = _live_stream_game_events(game_id, top_k, min_ply, white_baseline, black_baseline)
     return StreamingResponse(
-        generator,
+        _metered_live_stream(request, generator),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -804,13 +868,14 @@ async def live_stream_game(
 
 @app.get("/live/tv")
 async def live_tv(
+    request: Request,
     top_k: int = Query(DEFAULT_TOP_K, ge=1, le=20),
     min_ply: int = Query(DEFAULT_MIN_PLY, ge=0, le=100),
 ):
     """Follow Lichess TV's currently featured game over Server-Sent Events."""
     generator = stream_tv(fetch_game_pgn, _run_inference, top_k, min_ply, MAX_PLIES)
     return StreamingResponse(
-        generator,
+        _metered_live_stream(request, generator),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
