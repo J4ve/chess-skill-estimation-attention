@@ -168,7 +168,7 @@ files inside the two archives as they extract.
 | [`baseline_lr3e4__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/baseline_lr3e4__best.json) | `baseline_lr3e4` evaluation record and `arch_params` | `e47674dd866fca2723f77045aaf420ad2ea33a81f992fa66d70e7682b96d2f38` |
 | [`deepcnn__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/deepcnn__best.json) | `deepcnn` evaluation record and `arch_params` | `2cd4697aecb9afb0f7ef867d28045bdc8079d932f6caa8e89776d3487d00e2ed` |
 | [`lowdropout__best.json`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/lowdropout__best.json) | `lowdropout` evaluation record and `arch_params` | `06778437d4c9580792d1c00626c1689f737db82e050bfe1bfd2f1bc21f163693` |
-| [`SHA256SUMS.txt`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/SHA256SUMS.txt) | Checksums for every asset above and for every file inside the two archives | listed in the release notes |
+| [`SHA256SUMS.txt`](https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.1-weights-attn-tuned/SHA256SUMS.txt) | Checksums for every asset above and for every file inside the two archives | `15ad87811b8fd1e066f2c7f2ab0fff152b0c93186fd1aa2c87f82729eba10d4d` |
 
 ### Seeds
 
