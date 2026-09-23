@@ -1719,10 +1719,15 @@ body:has(#results-panel[hidden]) .tab-panel.samples-panel {
   position: absolute;
   top: 8px;
   left: var(--space-3);
+  z-index: 1;
   font-size: var(--fs-sm);
   font-weight: 650;
   color: var(--text);
   pointer-events: none;
+}
+
+.chart-title .info-icon {
+  pointer-events: auto;
 }
 
 .chart-canvas-wrap {

@@ -112,6 +112,10 @@ const METRIC_INFO = {
     term: "Engine-move markers",
     text: "On a synthetic sample, a marked ply is one where the move was swapped for a stronger engine's move, known for certain because the game was built that way. The scores can still miss such a game or flag a clean one, as the missed and false-alarm samples show. Real games never carry this marker.",
   },
+  ratingCurvesOverlap: {
+    term: "Why White and Black look alike",
+    text: "White's and Black's estimates come from one shared network whose final layer barely separates the two outputs, so they are nearly the same function of the game (cosine similarity 0.9999 in this model, 1.0000 in the original architecture it extends). In practice the two curves land within a few rating points of each other, even when the real players differ by hundreds of points. This is an inherited property of the architecture, not a bug and not an effect of the attention mechanism this study added, so read the chart as a single skill estimate for the game rather than two independent per-player readings.",
+  },
 };
 
 const state = {
