@@ -804,14 +804,18 @@ async def _live_stream_game_events(
 def _client_key(request: Request) -> str:
     """Identify the caller for the per-visitor stream cap.
 
-    Behind the loopback reverse proxy, `request.client.host` is always 127.0.0.1,
-    so the forwarded address is the only thing that distinguishes visitors. Only
-    the first entry is used: the rest of an X-Forwarded-For chain is client
-    supplied and trivially spoofed.
+    This deliberately does not parse X-Forwarded-For by hand. Run with uvicorn's
+    `--proxy-headers --forwarded-allow-ips=127.0.0.1`, as the deployment unit does,
+    the server has already resolved the real client address and will only take it
+    from the loopback proxy, so a visitor cannot raise their own cap by sending a
+    forged header. Picking an entry out of the raw chain instead would mean
+    guessing whether the proxy appends or replaces, and guessing wrong selects the
+    one value the client controls.
+
+    Without those flags this falls back to the peer address, which behind a proxy
+    is the proxy itself. That collapses every visitor onto one key, so the
+    per-visitor cap becomes a second global cap: a safe direction to fail.
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
