@@ -1,0 +1,19 @@
+# /etc/logrotate.d/ratingnet
+#
+# api.py appends one JSON line per prediction to logs/predictions.jsonl and never
+# truncates it. On a developer machine that is harmless. On a public deployment it
+# is unbounded growth on a shared disk, and the lines carry the player names from
+# whatever PGN a visitor submitted, so keeping them forever is not wanted either.
+#
+# Rotate on size rather than daily: the file grows with traffic, not with time.
+/opt/ratingnet/app/logs/predictions.jsonl {
+	size 50M
+	rotate 3
+	compress
+	delaycompress
+	missingok
+	notifempty
+	copytruncate
+	su ratingnet ratingnet
+	create 0640 ratingnet ratingnet
+}

@@ -74,6 +74,21 @@ downtime for anything else the proxy serves. If validation fails, change nothing
 The host name is an `sslip.io` name, which resolves to the server's own address,
 so a publicly trusted certificate can be issued without owning a domain.
 
+## The prediction log
+
+`api.py` appends one JSON line per prediction to `logs/predictions.jsonl` and never
+truncates it, so on a public deployment it grows without bound and keeps the player
+names from every PGN a visitor submits. Install the rotation config alongside the
+service:
+
+```bash
+sudo install -m 644 deploy/vps/ratingnet-logrotate /etc/logrotate.d/ratingnet
+sudo logrotate --debug /etc/logrotate.d/ratingnet   # parses and reports, changes nothing
+```
+
+It rotates on size rather than on a schedule, because the file grows with traffic
+rather than with time, and keeps three compressed generations.
+
 ## Limits
 
 `src/limits.py` holds the deployment limits, and `ratingnet.service` sets each
