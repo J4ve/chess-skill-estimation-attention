@@ -17,9 +17,9 @@ Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_th
 
 ## The app
 
-Following a live Lichess TV game, switching suspicion methods mid-game:
+Stepping through a held-out test game, switching suspicion methods, in light and dark themes:
 
-![Demo: following a live game, switching suspicion methods](docs/screenshots/demo.gif)
+![Demo: stepping through a sample game, switching suspicion methods, in light and dark themes](docs/screenshots/demo.gif)
 
 ![Analysis view, light theme](docs/screenshots/analysis-light.png)
 
