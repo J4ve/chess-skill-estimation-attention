@@ -27,8 +27,12 @@ live mode. In live mode it follows an ongoing game by ID or the current Lichess
 TV feature and sends a fresh per-move estimate over Server-Sent Events as each
 move is played.
 
-The host name is an `sslip.io` name, which resolves to the server's own address,
-so the certificate is publicly trusted without a domain being owned.
+The host name is an `sslip.io` name, which derives from the server's own address:
+it needs no account and no renewal, and the certificate is trusted without
+depending on a registered domain. The service also answers on
+`ratingnet.ddns.net`, a free dynamic-DNS hostname kept as a convenience alias;
+unlike the sslip.io name above, it needs periodic re-confirmation and stops
+resolving if that lapses, so the sslip.io address is the one to rely on.
 
 It is a single-worker deployment sharing two vCPUs, so it is bounded: 20
 concurrent live streams and 2 per visitor, with analysis requests running two at
