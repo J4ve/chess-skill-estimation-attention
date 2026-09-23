@@ -74,6 +74,14 @@ downtime for anything else the proxy serves. If validation fails, change nothing
 The host name is an `sslip.io` name, which resolves to the server's own address,
 so a publicly trusted certificate can be issued without owning a domain.
 
+Adding a further hostname later means editing the site address line in
+`deploy/vps/caddy-site.conf` (currently `161-118-236-156.sslip.io,
+ratingnet.ddns.net {`) to include it, before that name can get a certificate: the
+rest of the host's Caddyfile ends in a catch-all block that declines to obtain a
+certificate for any host name it does not already know, by design, so a name
+left out of this line never resolves over HTTPS no matter how its own DNS is
+configured.
+
 ## The prediction log
 
 `api.py` appends one JSON line per prediction to `logs/predictions.jsonl` and never
