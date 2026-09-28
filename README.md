@@ -22,8 +22,10 @@ Manuscript and experimental plan: [J4ve/cs_thesis](https://github.com/J4ve/cs_th
 This is the application itself, the FastAPI service described below, running on a
 small ARM64 server. It serves the tuned attention checkpoint on CPU and has
 outbound access to the Lichess API, so every input the prototype accepts works
-there: a pasted or uploaded PGN, a Lichess game ID, a bundled sample game, and
-live mode. In live mode it follows an ongoing game by ID or the current Lichess
+there: a pasted or uploaded PGN, a Lichess game ID, a bundled sample game,
+live mode, and Play mode (whose "fetch a Lichess rating" baseline option
+calls the public Lichess API directly from the browser, not through this
+server). In live mode it follows an ongoing game by ID or the current Lichess
 TV feature and sends a fresh per-move estimate over Server-Sent Events as each
 move is played.
 
@@ -90,6 +92,9 @@ The same view in dark theme, and the sample-game picker:
   over Server-Sent Events.
 - **Sample games**: held-out test games across time controls, plus synthetic
   caught / false-alarm / missed examples, in one click.
+- **Play mode**: make moves directly on the board (draggable, legal moves
+  only) and get the rating estimate and suspicion score after every move; see
+  [docs/web-prototype.md](docs/web-prototype.md#play-mode).
 
 ## Quick start (web prototype, local machine)
 
@@ -483,9 +488,11 @@ come from the HPC code path) and review the diff.
   The model's BiLSTM has a backward pass that needs a completed sequence;
   there is no incremental/streaming inference here; scoring ply *t* means
   running the model over plies 1..*t* from scratch. This is fine for the
-  batch PGN/Lichess-ID flows in this prototype. Live mode (see [docs/web-prototype.md](docs/web-prototype.md#live-mode))
-  works around it by re-running the batch pipeline on the growing prefix
-  and taking only the final-ply estimate each time, so the live curve is a
+  batch PGN/Lichess-ID flows in this prototype. Live mode and Play mode (see
+  [docs/web-prototype.md](docs/web-prototype.md#live-mode) and
+  [#play-mode](docs/web-prototype.md#play-mode)) work around it by
+  re-running the batch pipeline on the growing prefix and taking only the
+  final-ply estimate each time, so the curve shown during either mode is a
   sequence of independent from-scratch runs, not a true incremental
   inference; it can differ from the full-game curve for the same finished
   game.

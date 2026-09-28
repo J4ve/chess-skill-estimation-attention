@@ -7,12 +7,15 @@
 FastAPI's `StaticFiles` at `/static`, with `GET /` returning `index.html`
 directly.
 
-The input is a one-line bar at the top with five tabs: paste PGN, upload a
+The input is a one-line bar at the top with six tabs: paste PGN, upload a
 `.pgn` file, enter a Lichess game ID/URL, pick a **sample game** (see "Sample
-games" below), or watch a game **live** (see "Live mode" below); an
-"Options" dropdown holds the per-side baseline, critical-move top-k, and
-min-ply overrides shared across tabs. Once a game is analyzed the bar
-collapses to a "Load game" button.
+games" below), watch a game **live** (see "Live mode" below), or **play** a
+game directly on the board (see "Play mode" below); an "Options" dropdown
+holds the per-side baseline, critical-move top-k, and min-ply overrides
+shared across tabs (Play mode has its own baseline inputs instead; see
+below). Once a game is analyzed the bar collapses to a "Load game" button,
+except in Play mode, whose own in-game controls (Undo, Reset, Pause, Export
+PGN) live in that same bar and need to stay reachable mid-game.
 
 **Layout.** The results page is a compact, Lichess-like, one-screen desktop
 layout: on a 1080p screen the whole analysis fits without page scrolling.
@@ -340,6 +343,93 @@ Permanent problems (a bad game ID, a game without clocks, or a game that
 starts from a custom position or variant, such as a thematic arena) arrive
 as an SSE error event with the reason, which the page shows without
 reconnecting.
+
+## Play mode
+
+The Play tab lets a reviewer make moves directly on the board and watch the
+rating estimate and suspicion score update after every move, instead of
+pasting a finished game. It reuses the exact same rendering as every other
+mode (the rating chart, suspicion card, move list, and metrics panel), so it
+sends the game so far to the existing `POST /predict/pgn` endpoint (no new
+endpoint) after every move, built as a normal PGN with `[%clk ...]`
+annotations and a `TimeControl` header, exactly like a pasted game. The board
+itself is never driven by that response: chess.js validates every drag and
+is the only source of truth for the position, so a debounced or in-flight
+analysis response can never snap the board backward.
+
+**Before the first move**, pick a clock mode and (optionally) a baseline per
+side; both lock once the game starts. **Draggable moves** are legal-only
+(chess.js) and always promote to a queen (no underpromotion picker); undo,
+reset, flip board and Export PGN are always available from the header's
+compact control row, which stays visible throughout the game (Play mode
+never auto-collapses the header, unlike every other mode, since those
+controls live there).
+
+**Clock modes** (chosen once, before the first move):
+
+- **Live clock** (default, 3+0 blitz): a real ticking clock, exactly like
+  Lichess. Both sides' clocks run from the chosen time control; the side that
+  just moved has the increment credited, matching the `[%clk]` convention
+  `format_data.compute_time_spent` already assumes (the reported remaining
+  time already includes the increment), except for each side's own first
+  move, which neither ticks nor receives the increment (verified against
+  the bundled `src/static/samples/*.pgn` exports: both the game's first and
+  second plies always report the `TimeControl` base unchanged). Pause/resume
+  is allowed; paused time is banked out before the timer resumes, so it is
+  never counted as think time. Running out of time ends the game as a loss
+  for the side that flagged.
+- **Simulated clock**: no ticking. After each move, a think time is filled in
+  from a JS port of the parametric model in
+  `analysis/synthesize_anomaly_clocks.py` (built for the thesis's synthetic
+  anomaly corpus and calibrated against Sigman et al. 2010's published
+  chess-clock pacing data; see that script's own docstring). Only the
+  band-agnostic parametric path is ported (no fitted empirical parameters
+  ship in this checkout); see the cited comment block in `src/static/app.js`
+  for the exact constants. Click any move's time chip in the move list to
+  override its think time; later moves recompute forward from the override
+  using their own already-drawn random factor, matching the source script's
+  own countdown arithmetic.
+- **Untimed**: a fixed assumed think time per move
+  (`PLAY_UNTIMED_ASSUMED_SECONDS_PER_MOVE` in `app.js`, 10 seconds), against a
+  large nominal reservoir that never runs out. Shown with a visible warning:
+  the rating model takes clock time as a direct input, so an untimed game's
+  estimate is less reliable than a timed one.
+
+**Baselines.** The rating estimate itself needs no baseline: the model reads
+it from the moves alone, exactly as in every other mode. A baseline is used
+only to judge the suspicion score (how far the estimate drifts from it), and
+Play mode offers three ways to set one per side: type a rating, fetch a
+Lichess username's current rating for the chosen time control's Lichess perf
+type (a direct client-side call to the public
+`https://lichess.org/api/user/{username}` endpoint, which sends permissive
+CORS headers; handles a 404, network error, timeout, closed account, and a
+perf with no games), or leave it blank for the same self-prediction fallback
+every other mode uses. The status box under the suspicion card always says
+which source is in use per side.
+
+**Suspicion score below 20 plies.** There is no length gate anywhere in the
+app: `api.py` scores and labels a game of any length, including a handful of
+opening moves. But the percentile cutoffs behind the Typical/Unusual/Highly
+unusual label (`src/static/suspicion_cutoffs.json`) were fitted only on real
+held-out games with at least 20 plies, so a shorter game's label rests on
+cutoffs fitted to longer games. The score and label are always shown, never
+hidden; below `PLAY_MIN_PLIES_FOR_SUSPICION` (20, in `app.js`) a caveat
+saying so is appended to each score's tooltip and shown in the status box,
+since Play is the one mode where a very short game is the common case, not
+the edge case, for the first minute of a new game.
+
+**Debouncing.** A move triggers analysis after a short debounce
+(`PLAY_ANALYZE_DEBOUNCE_MS`, 350&nbsp;ms); at most one request is in flight at
+a time, and a move made while one is running just marks the game dirty for
+one more request once the current one finishes, so a burst of fast moves
+never queues more than two requests. Undo and reset bump a request sequence
+number and abort the in-flight request, so a response for a move list that
+no longer exists is dropped rather than rendered.
+
+**Game length.** `parse_game` truncates analysis at 100 plies
+(`api.py`'s `MAX_PLIES`); Play mode stops sending new plies past that point
+and says so in the status box, though the game itself keeps going on the
+board.
 
 ## Roadmap (not built)
 

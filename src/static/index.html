@@ -32,6 +32,7 @@
           <button class="tab-button" data-tab="lichess" role="tab" aria-selected="false">Lichess</button>
           <button class="tab-button" data-tab="samples" role="tab" aria-selected="false">Samples</button>
           <button class="tab-button" data-tab="live" role="tab" aria-selected="false">Live</button>
+          <button class="tab-button" data-tab="play" role="tab" aria-selected="false">Play</button>
         </div>
 
         <div class="tab-panel active" data-panel="paste">
@@ -52,6 +53,73 @@
           <button id="live-tv-button" type="button" class="secondary-button">Lichess TV</button>
           <button id="live-stop-button" type="button" class="secondary-button" hidden>Stop</button>
           <span id="live-status-line" class="live-status-line" hidden></span>
+        </div>
+
+        <div class="tab-panel play-panel" data-panel="play">
+          <div id="play-setup" class="play-setup">
+            <p class="play-intro">
+              Make moves on the board and the rating estimate and suspicion score update after every move.
+              The rating estimate needs no input: the model reads it from the moves alone. A rating below is
+              only the baseline the suspicion score compares against, and can be left blank.
+              <button type="button" class="info-icon" data-info-key="playBaseline" aria-label="About the baseline rating">i</button>
+            </p>
+
+            <fieldset class="play-clock-modes">
+              <legend>Clock</legend>
+              <label><input type="radio" name="play-clock-mode" value="live" checked> Live clock (real time, like Lichess)</label>
+              <label><input type="radio" name="play-clock-mode" value="simulated"> Simulated clock (no ticking, realistic think time)</label>
+              <label><input type="radio" name="play-clock-mode" value="untimed"> Untimed (fixed assumed think time)</label>
+              <button type="button" class="info-icon" data-info-key="playClockMode" aria-label="About clock modes">i</button>
+            </fieldset>
+
+            <div id="play-time-control" class="play-time-control">
+              <span class="play-tc-label">Time control</span>
+              <div class="play-tc-presets" role="group" aria-label="Time control preset">
+                <button type="button" class="chip-button play-tc-preset" data-base="60" data-inc="0">1+0</button>
+                <button type="button" class="chip-button play-tc-preset active" data-base="180" data-inc="0">3+0</button>
+                <button type="button" class="chip-button play-tc-preset" data-base="180" data-inc="2">3+2</button>
+                <button type="button" class="chip-button play-tc-preset" data-base="600" data-inc="0">10+0</button>
+                <button type="button" class="chip-button play-tc-preset" data-base="1800" data-inc="0">30+0</button>
+                <button type="button" class="chip-button play-tc-preset" data-custom="1">Custom</button>
+              </div>
+              <div id="play-tc-custom" class="play-tc-custom" hidden>
+                <label for="play-tc-base">Minutes</label>
+                <input type="number" id="play-tc-base" min="1" max="180" value="5">
+                <label for="play-tc-inc">Increment (s)</label>
+                <input type="number" id="play-tc-inc" min="0" max="60" value="0">
+              </div>
+            </div>
+
+            <div class="play-baselines">
+              <div class="play-baseline-side" data-side="white">
+                <span class="play-baseline-label"><span class="side-swatch" aria-hidden="true"></span>White baseline</span>
+                <input type="number" id="play-white-rating" class="play-baseline-rating" placeholder="Rating (optional)">
+                <span class="play-baseline-or">or Lichess</span>
+                <input type="text" id="play-white-lichess" class="play-baseline-username" placeholder="username">
+                <button type="button" class="secondary-button small" id="play-white-fetch">Fetch</button>
+                <span id="play-white-baseline-status" class="play-baseline-status"></span>
+              </div>
+              <div class="play-baseline-side" data-side="black">
+                <span class="play-baseline-label"><span class="side-swatch side-swatch-black" aria-hidden="true"></span>Black baseline</span>
+                <input type="number" id="play-black-rating" class="play-baseline-rating" placeholder="Rating (optional)">
+                <span class="play-baseline-or">or Lichess</span>
+                <input type="text" id="play-black-lichess" class="play-baseline-username" placeholder="username">
+                <button type="button" class="secondary-button small" id="play-black-fetch">Fetch</button>
+                <span id="play-black-baseline-status" class="play-baseline-status"></span>
+              </div>
+            </div>
+
+            <button type="button" id="play-start-button" class="primary-button">Start game</button>
+          </div>
+
+          <div id="play-active-controls" class="play-active-controls" hidden>
+            <span id="play-mode-summary" class="play-mode-summary"></span>
+            <span class="card-head-spacer"></span>
+            <button type="button" id="play-pause-button" class="secondary-button small" hidden>Pause</button>
+            <button type="button" id="play-undo-button" class="secondary-button small">Undo</button>
+            <button type="button" id="play-reset-button" class="secondary-button small">Reset</button>
+            <button type="button" id="play-export-button" class="secondary-button small">Export PGN</button>
+          </div>
         </div>
 
         <div class="tab-panel samples-panel" data-panel="samples">
@@ -182,6 +250,8 @@
       </div>
 
       <div id="sample-meta-box" class="card sample-meta-box" hidden></div>
+
+      <div id="play-status-box" class="card play-status-box" hidden></div>
 
       <details id="warnings-box" class="card warnings-box" hidden></details>
 

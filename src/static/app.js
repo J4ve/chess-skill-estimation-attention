@@ -10,6 +10,144 @@ const LIVE_RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 const LIVE_CLOCK_TICK_MS = 100;
 const LOW_CLOCK_SECONDS = 20;
 
+// Play mode: below this many plies, the score and its Typical/Unusual/Highly
+// unusual label are still real (api.py scores and labels any game with at
+// least one ply; there is no length gate anywhere in the app today), but the
+// percentile cutoffs behind the label were fitted only on real held-out
+// games with at least 20 plies (suspicion_cutoffs.json's source_description).
+// So the score is never hidden; below this length a caveat is appended to
+// its tooltip and to the Play status box, since Play is the one mode where a
+// very short game (a handful of opening moves) is a common, not edge, case.
+const PLAY_MIN_PLIES_FOR_SUSPICION = 20;
+const PLAY_ANALYZE_DEBOUNCE_MS = 350;
+const PLAY_MAX_PLIES = 100; // matches api.py MAX_PLIES; parse_game truncates past this
+const PLAY_CLOCK_TICK_MS = 100;
+
+// Untimed fallback: a fixed assumed think time per move, since the rating
+// model takes clock time as a direct input (format_data.py's clock feature)
+// and Play mode must always emit a [%clk ...] per ply. Reservoir is a
+// nominal per-side budget sized to two things at once: (1) never run out
+// within the 100-ply analysis cap (up to 50 own-moves per side at 10s each
+// is 500s, comfortably under 600s), and (2) stay in a normal 10-minute-game
+// range rather than a value the model never saw in training (chess_rating_net.py's
+// clock feature is z-scored with mean 273s / std 380s, so a much larger
+// reservoir like 3600s would sit many standard deviations outside the
+// training distribution on every single ply).
+const PLAY_UNTIMED_ASSUMED_SECONDS_PER_MOVE = 10;
+const PLAY_UNTIMED_RESERVOIR_SECONDS = 600;
+
+// Lichess time-control presets offered in Play mode: [label, base seconds, increment seconds].
+const PLAY_TC_PRESETS = [
+  ["1+0", 60, 0],
+  ["3+0", 180, 0],
+  ["3+2", 180, 2],
+  ["10+0", 600, 0],
+  ["30+0", 1800, 0],
+];
+const PLAY_DEFAULT_TC = { base: 180, inc: 0 }; // 3+0 blitz, captain-directed default
+
+// Maps this app's time-control bucket (format_data.categorize_time_control)
+// to the Lichess user API's perf key, for the "fetch a Lichess rating" baseline.
+const PLAY_BUCKET_TO_LICHESS_PERF = {
+  ultrabullet: "ultraBullet",
+  bullet: "bullet",
+  blitz: "blitz",
+  rapid: "rapid",
+  classical: "classical",
+};
+
+// --- Simulated clock: ported think-time model -------------------------------
+//
+// Play mode's "Simulated clock" fills in a realistic remaining-time countdown
+// after each move instead of a real ticking timer. This is a JS port of the
+// band-agnostic path of the parametric model in
+// analysis/synthesize_anomaly_clocks.py (ClockParams defaults, _share_for_move,
+// synthesize_game_clocks), built for the thesis's 90,000-game synthetic
+// anomaly corpus and calibrated against Sigman, Etchemendy, Fernandez Slezak
+// and Cecchi (2010), "Response Time Distributions in Rapid Chess",
+// Front. Neurosci. That script also supports an "empirical-share" method
+// fitted from real Lichess games (--fit-from), but no fitted parameter file
+// exists in this checkout (it requires the real preprocessed corpus, which
+// only lives on the HPC), so this port uses the parametric fallback only,
+// with no Maia rating band (band-agnostic sigma_log and phase, i.e. band =
+// null in the source script). Ported here as fixed constants, not loaded from
+// a JSON file, since the source script's own defaults are what a band-agnostic
+// caller gets. Kept in sync by hand; the two are not expected to change often.
+const SIM_CLOCK_SIGMA_LOG = 0.91; // ClockParams.sigma_log default (band = null)
+const SIM_CLOCK_N_EXPECTED = 40.0;
+const SIM_CLOCK_N_FLOOR = 12.0;
+const SIM_CLOCK_KAPPA = 0.45;
+const SIM_CLOCK_X_LO = 0.08;
+const SIM_CLOCK_X_HI = 8.0;
+const SIM_CLOCK_MIN_MOVE_S = 0.1;
+const SIM_CLOCK_FLOOR_S = 0.1;
+// DEFAULT_PHASE_KNOTS: [per-player move index k, phase value], piecewise-linear.
+const SIM_CLOCK_PHASE_KNOTS = [
+  [0.0, 0.1],
+  [3.0, 0.3],
+  [7.0, 0.68],
+  [20.0, 0.75],
+  [35.0, 0.65],
+  [50.0, 0.58],
+];
+
+function simClockPhase(k) {
+  const knots = SIM_CLOCK_PHASE_KNOTS;
+  if (k <= knots[0][0]) return knots[0][1];
+  if (k >= knots[knots.length - 1][0]) return knots[knots.length - 1][1];
+  for (let i = 0; i < knots.length - 1; i++) {
+    const [k0, v0] = knots[i];
+    const [k1, v1] = knots[i + 1];
+    if (k0 <= k && k <= k1) {
+      if (k1 === k0) return v1;
+      const t = (k - k0) / (k1 - k0);
+      return v0 + t * (v1 - v0);
+    }
+  }
+  return knots[knots.length - 1][1];
+}
+
+// Box-Muller standard normal sample (mean 0, sd 1); Math.random() is fine
+// here since this is a plausibility model, not a reproducibility-critical
+// stream like the source script's seeded random.Random.
+function gaussianSample() {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+// Fraction of the mover's remaining time to spend on this move (parametric
+// fallback branch of _share_for_move, band = null). Returns {share, x} so the
+// caller can store x and recompute later if the user overrides this move's
+// actual spend (see recomputePlaySimulatedClocksFrom).
+function simShareForMove(k) {
+  const sigma = SIM_CLOCK_SIGMA_LOG;
+  const mu = -0.5 * sigma * sigma;
+  let x = Math.exp(mu + sigma * gaussianSample());
+  x = Math.min(Math.max(x, SIM_CLOCK_X_LO), SIM_CLOCK_X_HI);
+  const nK = Math.max(SIM_CLOCK_N_FLOOR, SIM_CLOCK_N_EXPECTED - k);
+  const share = (simClockPhase(k) * x) / nK;
+  return { share, x };
+}
+
+// One ply of synthesize_game_clocks's per-ply loop: given the mover's current
+// remaining time `cur` and a fraction-of-remaining `share`, returns the
+// seconds actually spent (clamped) and the reported remaining time after the
+// increment (Lichess reports the mover's clock with the increment already
+// credited, matching format_data.compute_time_spent's own "previous minus
+// current plus increment" arithmetic and the source script's
+// report_after_increment=True default).
+function simAdvanceClock(cur, share, incSeconds) {
+  let d = share * cur;
+  d = Math.max(d, SIM_CLOCK_MIN_MOVE_S);
+  d = Math.min(d, SIM_CLOCK_KAPPA * cur);
+  const afterSpend = Math.max(SIM_CLOCK_FLOOR_S, cur - d);
+  const actualSpend = cur - afterSpend;
+  return { reported: afterSpend + incSeconds, actualSpend };
+}
+
 // Mirrors suspicion_labels.LABEL_TEXT in src/suspicion_labels.py. The chip
 // shows the short form; the long form goes in its tooltip.
 const SUSPICION_LABEL_TEXT = {
@@ -112,6 +250,14 @@ const METRIC_INFO = {
     term: "Engine-move markers",
     text: "On a synthetic sample, a marked ply is one where the move was swapped for a stronger engine's move, known for certain because the game was built that way. The scores can still miss such a game or flag a clean one, as the missed and false-alarm samples show. Real games never carry this marker.",
   },
+  playClockMode: {
+    term: "Clock modes",
+    text: "Live clock ticks in real time, like Lichess, and uses however long you actually take on each move. Simulated clock does not tick; it fills in a realistic think time after each move from a model fitted for the thesis's synthetic corpus, which you can override per move. Untimed uses a fixed assumed think time and is the least reliable, since the model reads clock time as one of its inputs.",
+  },
+  playBaseline: {
+    term: "Play mode baseline",
+    text: "The rating estimate needs no baseline: the model reads it from the moves alone. A baseline is only used to judge the suspicion score, which measures how far the estimate drifts from it. Type a rating, fetch one from a Lichess username for the chosen time control, or leave it blank to fall back to the model's own estimate (least reliable).",
+  },
   ratingCurvesOverlap: {
     term: "Why White and Black look alike",
     text: "White's and Black's estimates come from one shared network whose final layer barely separates the two outputs, so they are nearly the same function of the game (cosine similarity 0.9999 in this model, 1.0000 in the original architecture it extends). In practice the two curves land within a few rating points of each other, even when the real players differ by hundreds of points. This is an inherited property of the architecture, not a bug and not an effect of the attention mechanism this study added, so read the chart as a single skill estimate for the game rather than two independent per-player readings.",
@@ -153,6 +299,35 @@ const state = {
     clockAnchor: null, // { ply, side, seconds, at }
     clockTimer: null,
     lastInferenceMs: null,
+  },
+  play: {
+    active: false, // a game has been configured and started (Start game clicked)
+    over: false,
+    overReason: null, // "checkmate" | "stalemate" | "draw" | "flag" | "insufficient_material" | "threefold"
+    resultTag: null, // "1-0" | "0-1" | "1/2-1/2", set once `over` is true
+    paused: false,
+    viewingLive: true, // mirrors state.live.following: false while browsing history
+    clockMode: "live", // "live" | "simulated" | "untimed"
+    baseSec: PLAY_DEFAULT_TC.base,
+    incSec: PLAY_DEFAULT_TC.inc,
+    tcLabel: "",
+    chess: null, // Chess instance, created lazily (needs the module import to have resolved)
+    moves: [], // [{ san, uci, color: "w"|"b", clockSec, thinkSpentSec, simX }]
+    clock: { w: 0, b: 0 }, // current remaining seconds per side (authoritative, local)
+    turnStartMs: null, // performance.now() when the side to move's clock last started running
+    tickTimer: null,
+    debounceTimer: null,
+    baselines: {
+      white: { rating: null, source: "self_prediction_fallback", label: null },
+      black: { rating: null, source: "self_prediction_fallback", label: null },
+    },
+    lichessFetch: { white: null, black: null }, // { value: "1812", label: "..." } once fetched
+    result: null, // last analysis response for the game so far
+    requestSeq: 0,
+    inFlight: false,
+    dirty: false, // a move happened since the last request was sent; re-request on completion
+    abortController: null,
+    lastError: null,
   },
 };
 
@@ -267,11 +442,21 @@ function actualAndErrorHtml(current, actual) {
 function rerenderForActualRatingToggle() {
   if (!state.result) return;
   renderSuspicion(state.result);
+  if (playOnScreen()) applyPlayTooShortSuspicionOverride(state.result.per_move.length);
   renderChart(state.result);
-  renderPlayerBars(state.currentPly);
-  renderMetricsPanel(state.currentPly);
+  if (playOnScreen()) {
+    // state.currentPly can run ahead of state.result.per_move (Play's board
+    // is authoritative and can be a move or two ahead of a lagging debounced
+    // response), which would index past the array in the generic renderers.
+    renderPlayerBarsForPlay();
+    renderPlayMetricsPanel();
+  } else {
+    renderPlayerBars(state.currentPly);
+    renderMetricsPanel(state.currentPly);
+  }
   renderSampleMetaBox(state.sampleMeta);
   syncLiveClockTicker();
+  syncPlayClockTicker();
 }
 
 function setActualRatingsHidden(hidden) {
@@ -400,12 +585,47 @@ function setupTabs() {
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.classList.toggle("active", panel.dataset.panel === tab);
       });
-      // Samples and Live have their own load/watch controls instead of the
-      // shared "Analyze" button.
-      $("submit-button").hidden = tab === "samples" || tab === "live";
+      // Samples, Live and Play have their own load/watch/start controls
+      // instead of the shared "Analyze" button.
+      $("submit-button").hidden = tab === "samples" || tab === "live" || tab === "play";
+      // Autoplay steps through state.fenAtPly, which conflicts with Play
+      // mode's own board control; hide it while Play is on screen.
+      $("play-pause").hidden = tab === "play";
       clearError();
       if (tab === "samples") {
         loadSamplesManifest();
+      }
+      if (tab === "play") {
+        // Autoplay steps state.fenAtPly and a live stream keeps calling
+        // renderResult({live:true}); either would fight Play's own board
+        // control (and, for a live stream, silently swap in a different
+        // game) the moment its next tick/update lands. Stop both on every
+        // entry to Play, not only when a game is already active.
+        stopAutoplay();
+        stopLiveStream({ silent: true });
+      }
+      if (tab === "play" && state.play.active) {
+        // Returning to an in-progress game: show its controls and restore the
+        // whole shared render (board, bars, chart, suspicion, move list) to
+        // Play's own last analysis, since another tab's Analyze may have
+        // redrawn the shared board and bars in the meantime.
+        state.play.viewingLive = true;
+        showPlayActiveControls();
+        $("results-panel").hidden = false;
+        if (state.play.result) {
+          renderResult(state.play.result, { play: true });
+        } else {
+          clearPlaySuspicionAndChart();
+          state.board.resize();
+          state.board.position("start", false);
+          refreshPlayBoardLocalUi();
+        }
+      } else if (tab !== "play") {
+        // Leaving Play: stop painting its clocks over this tab's bars and
+        // hide its status box, which (like the board) is not scoped to the
+        // input tab and stays in the DOM regardless of which tab is active.
+        syncPlayClockTicker();
+        renderPlayStatusBox();
       }
     });
   });
@@ -425,20 +645,32 @@ function setupInputPanelToggle() {
 }
 
 function setupBoard() {
+  // chessboard.js fixes its config at construction, so dragging is always
+  // wired up; canDragPlayPiece gates it to Play mode at the live position so
+  // every other mode (and history browsing within Play) stays undraggable,
+  // exactly as before this feature existed.
   state.board = window.Chessboard("board", {
     position: "start",
+    draggable: true,
     pieceTheme: "/static/vendor/chessboard-js/img/chesspieces/wikipedia/{piece}.png",
+    onDragStart: canDragPlayPiece,
+    onDrop: onPlayPieceDrop,
+    onSnapEnd: onPlayBoardSnapEnd,
   });
   let resizeFrame = null;
   window.addEventListener("resize", () => {
     if (resizeFrame) cancelAnimationFrame(resizeFrame);
     resizeFrame = requestAnimationFrame(() => {
       resizeFrame = null;
-      if (!state.result) return;
+      if (!state.result && !playOnScreen()) return;
       // chessboard.js only measures its container when asked; resizing also
       // rebuilds the squares, so the last-move highlight is re-applied.
       state.board.resize();
-      highlightCurrentPly();
+      if (playOnScreen() && state.play.viewingLive) {
+        highlightMoveSquares(state.play.moves.length ? state.play.moves[state.play.moves.length - 1].uci : null);
+      } else if (state.result) {
+        highlightCurrentPly();
+      }
     });
   });
 }
@@ -801,21 +1033,24 @@ function renderResultInner(result, opts) {
     resetLiveSessionUi();
   }
 
-  stopAutoplay();
+  if (!opts.play) stopAutoplay();
 
   // chessboard.js sizes itself from the container's rendered width at call
   // time; the container is still `hidden` (0 width) until this point, so it
   // must be explicitly resized once the panel becomes visible.
   $("results-panel").hidden = false;
-  if (!opts.live || !wasLiveOnScreen) {
+  // Play mode manages its own orientation (respect a flip mid-game) and its
+  // own input-panel collapse (see showPlayActiveControls); never reset either
+  // from here once a play game is on screen.
+  if (!opts.live && !opts.play) {
     state.board.orientation("white");
   }
   state.board.resize();
 
   const headers = result.headers || {};
-  $("results-title").textContent = `${headers.White || "White"} vs ${headers.Black || "Black"}`;
+  $("results-title").textContent = opts.play ? "Play mode" : `${headers.White || "White"} vs ${headers.Black || "Black"}`;
   $("results-title").title = $("results-title").textContent;
-  $("provisional-badge").hidden = !result.provisional || Boolean(opts.live);
+  $("provisional-badge").hidden = !result.provisional || Boolean(opts.live) || Boolean(opts.play);
   METRIC_INFO.criticalMove.text = METRIC_INFO.criticalMove.text.replace(
     /before ply \d+/,
     `before ply ${result.critical_moves_min_ply}`
@@ -823,15 +1058,24 @@ function renderResultInner(result, opts) {
 
   renderWarnings(result.warnings || []);
   renderSuspicion(result);
+  if (opts.play) applyPlayTooShortSuspicionOverride(result.per_move.length);
   renderChart(result);
   renderMoveList(result.per_move);
   if (opts.live && !state.live.following) {
     moveList.scrollTop = previousListScroll;
   }
-  renderBoardAtPly(state.currentPly, { fromAutoplay: true, keepListScroll: opts.live && !state.live.following });
+  // Play mode's board is driven locally by chess.js, never by this
+  // possibly-lagging API result (see syncPlayBoardAndBars): a debounced
+  // response for ply N must never snap the board back while the player has
+  // already reached ply N+1.
+  if (opts.play) {
+    syncPlayBoardAndBars();
+  } else {
+    renderBoardAtPly(state.currentPly, { fromAutoplay: true, keepListScroll: opts.live && !state.live.following });
+  }
 
   $("input-panel-toggle").hidden = false;
-  if (!opts.live || !wasLiveOnScreen) {
+  if (!opts.live && !opts.play) {
     setInputPanelCollapsed(true);
   }
 }
@@ -1008,7 +1252,10 @@ function setSuspicionMethod(methodId) {
   saveSuspicionMethodPreference(state.suspicionMethod);
   applySuspicionMethodInfo();
   renderSuspicionMethodCaption();
-  if (state.result) renderSuspicion(state.result);
+  if (state.result) {
+    renderSuspicion(state.result);
+    if (playOnScreen()) applyPlayTooShortSuspicionOverride(state.result.per_move.length);
+  }
 }
 
 async function loadSuspicionMethodsTable() {
@@ -1733,6 +1980,16 @@ function buildMoveCell(move, side) {
     const timeEl = document.createElement("span");
     timeEl.className = "move-cell-time";
     timeEl.textContent = formatTimeSpent(move.time_spent_seconds);
+    // Simulated clock only: the time chip doubles as an "override this move's
+    // think time" control, since that mode has no real clock to type over.
+    if (playOnScreen() && state.play.clockMode === "simulated" && move.ply <= state.play.moves.length) {
+      timeEl.classList.add("editable");
+      timeEl.title = "Click to override the simulated think time for this move";
+      timeEl.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        overridePlaySimulatedSeconds(move.ply);
+      });
+    }
     btn.appendChild(timeEl);
   }
 
@@ -1799,6 +2056,9 @@ function renderBoardAtPly(ply, opts = {}) {
     if (state.live.active || state.live.connState !== "idle") {
       state.live.following = clamped === state.fenAtPly.length - 1;
     }
+    if (playOnScreen()) {
+      state.play.viewingLive = clamped === state.fenAtPly.length - 1;
+    }
 
     renderPlayerBars(clamped);
     renderMetricsPanel(clamped);
@@ -1808,6 +2068,7 @@ function renderBoardAtPly(ply, opts = {}) {
     }
     updateLiveButtons();
     syncLiveClockTicker();
+    syncPlayClockTicker();
   });
 }
 
@@ -1849,9 +2110,15 @@ function toggleAutoplay() {
 
 function flipBoard() {
   state.board.flip();
-  highlightCurrentPly();
-  renderPlayerBars(state.currentPly);
+  if (playOnScreen() && state.play.viewingLive) {
+    highlightMoveSquares(state.play.moves.length ? state.play.moves[state.play.moves.length - 1].uci : null);
+    renderPlayerBarsForPlay();
+  } else {
+    highlightCurrentPly();
+    renderPlayerBars(state.currentPly);
+  }
   syncLiveClockTicker();
+  syncPlayClockTicker();
 }
 
 function setupBoardControls() {
@@ -2137,6 +2404,7 @@ function setupLiveClockVisibility() {
     // Hidden: freeze. Visible again: the anchor still holds the server value
     // and its timestamp, so the first tick resyncs to the right estimate.
     syncLiveClockTicker();
+    syncPlayClockTicker();
   });
 }
 
@@ -2367,6 +2635,881 @@ function setupLiveControls() {
   $("board-overlay-retry").addEventListener("click", retryLiveWatch);
 }
 
+// ============================================================================
+// Play mode
+// ============================================================================
+//
+// The user drags moves directly on the shared board; chess.js (state.play.chess)
+// is the single source of truth for legality and position, never the API. Every
+// move is re-scored by sending the game so far, as a normal PGN with [%clk]
+// annotations and a TimeControl header, to the existing POST /predict/pgn
+// endpoint (no new endpoint needed), debounced and serialized so a burst of
+// fast moves never queues more than one request. The API's response drives
+// only the rating chart, suspicion card, move list and metrics panel, exactly
+// as it does for every other mode; the board and clocks are always driven
+// locally so they never wait on, or get snapped back by, a lagging response.
+
+// A Play game can stay `active` in the background while the user looks at a
+// different tab's analysis (the debounced scoring keeps running so state
+// stays fresh for when they come back). Every place that touches the shared
+// board, clock bars, move list or status box must gate on this, not merely
+// on `state.play.active`, or a background Play game leaks into whatever the
+// other tab is showing (draggable pieces on someone else's board, a stray
+// status line, a late response overwriting the other tab's result).
+function playOnScreen() {
+  return state.play.active && state.activeTab === "play";
+}
+
+// --- Setup: time control, clock mode, baselines -----------------------------
+
+function ensurePlayChess() {
+  if (!state.play.chess) state.play.chess = new Chess();
+  return state.play.chess;
+}
+
+function selectedPlayClockMode() {
+  const checked = document.querySelector('input[name="play-clock-mode"]:checked');
+  return checked ? checked.value : "live";
+}
+
+function selectedPlayTimeControl() {
+  const customBtn = document.querySelector(".play-tc-preset[data-custom]");
+  if (customBtn && customBtn.classList.contains("active")) {
+    const minutes = Math.max(1, parseInt($("play-tc-base").value, 10) || 5);
+    const inc = Math.max(0, parseInt($("play-tc-inc").value, 10) || 0);
+    return { base: minutes * 60, inc };
+  }
+  const activePreset = document.querySelector(".play-tc-preset.active:not([data-custom])");
+  if (activePreset) {
+    return { base: parseInt(activePreset.dataset.base, 10), inc: parseInt(activePreset.dataset.inc, 10) };
+  }
+  return { ...PLAY_DEFAULT_TC };
+}
+
+// Mirrors format_data.categorize_time_control / bucket_of (base + 40*inc).
+function playTcBucket(baseSec, incSec) {
+  const estimated = baseSec + 40 * incSec;
+  if (estimated < 29) return "ultrabullet";
+  if (estimated < 179) return "bullet";
+  if (estimated < 479) return "blitz";
+  if (estimated < 1499) return "rapid";
+  return "classical";
+}
+
+function playTimeControlLabel(baseSec, incSec) {
+  const preset = PLAY_TC_PRESETS.find((p) => p[1] === baseSec && p[2] === incSec);
+  const base = preset ? preset[0] : `${Math.round(baseSec / 60)}+${incSec}`;
+  return `${base} ${playTcBucket(baseSec, incSec)}`;
+}
+
+function setupPlayTimeControlPresets() {
+  const buttons = document.querySelectorAll(".play-tc-preset");
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (state.play.active) return; // locked once a game has started
+      buttons.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      $("play-tc-custom").hidden = !btn.dataset.custom;
+    });
+  });
+}
+
+// Resolves one side's suspicion baseline from the setup form: a typed rating,
+// a fetched Lichess rating (recognized because the field still holds exactly
+// what the fetch wrote there), or nothing (self-prediction fallback, resolved
+// server-side exactly as every other mode's blank baseline is).
+function resolvePlayBaselineInput(side) {
+  const ratingRaw = $(`play-${side}-rating`).value.trim();
+  if (ratingRaw === "") {
+    return { rating: null, source: "self_prediction_fallback", label: "self-estimated (no rating given)" };
+  }
+  const value = Number(ratingRaw);
+  if (!Number.isFinite(value)) {
+    return { rating: null, source: "self_prediction_fallback", label: "self-estimated (invalid rating ignored)" };
+  }
+  const fetched = state.play.lichessFetch[side];
+  if (fetched && fetched.value === ratingRaw) {
+    return { rating: value, source: "request", label: fetched.label };
+  }
+  return { rating: value, source: "request", label: `typed ${Math.round(value)}` };
+}
+
+async function fetchPlayLichessBaseline(side) {
+  const usernameInput = $(`play-${side}-lichess`);
+  const username = usernameInput.value.trim();
+  const statusEl = $(`play-${side}-baseline-status`);
+  if (!username) {
+    statusEl.textContent = "Enter a Lichess username first.";
+    return;
+  }
+  if (!/^[a-zA-Z0-9_-]{2,30}$/.test(username)) {
+    statusEl.textContent = "That does not look like a Lichess username.";
+    return;
+  }
+  const { base, inc } = selectedPlayTimeControl();
+  const perf = PLAY_BUCKET_TO_LICHESS_PERF[playTcBucket(base, inc)];
+  statusEl.textContent = "Fetching...";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  let response;
+  try {
+    response = await fetch(`https://lichess.org/api/user/${encodeURIComponent(username)}`, {
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    statusEl.textContent = err.name === "AbortError" ? "Lichess API timed out." : "Could not reach the Lichess API.";
+    return;
+  }
+  clearTimeout(timeoutId);
+  if (response.status === 404) {
+    statusEl.textContent = `No Lichess account named "${username}".`;
+    return;
+  }
+  if (!response.ok) {
+    statusEl.textContent = `Lichess API error (${response.status}).`;
+    return;
+  }
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    statusEl.textContent = "Lichess API returned an unexpected response.";
+    return;
+  }
+  if (data.disabled || data.closed || data.tosViolation) {
+    statusEl.textContent = "That Lichess account is closed.";
+    return;
+  }
+  const perfData = (data.perfs || {})[perf];
+  if (!perfData || !perfData.games) {
+    statusEl.textContent = `${username} has no rated ${perf} games on Lichess.`;
+    return;
+  }
+  const provisional = Boolean(perfData.prov);
+  const ratingStr = String(perfData.rating);
+  $(`play-${side}-rating`).value = ratingStr;
+  state.play.lichessFetch[side] = {
+    value: ratingStr,
+    label: `Lichess ${perf} ${perfData.rating}${provisional ? " (provisional)" : ""} for ${username}`,
+  };
+  statusEl.textContent = `${perfData.rating}${provisional ? " (provisional)" : ""} - ${perf} rating for ${username}`;
+}
+
+// --- Starting, resetting, undoing --------------------------------------------
+
+function startPlayGame() {
+  clearError();
+  stopLiveStream({ silent: true }); // belt and suspenders; the Play tab entry already stops it
+  const chess = ensurePlayChess();
+  chess.reset();
+  const clockMode = selectedPlayClockMode();
+  const { base, inc } = selectedPlayTimeControl();
+
+  state.play.active = true;
+  state.play.over = false;
+  state.play.overReason = null;
+  state.play.resultTag = null;
+  state.play.paused = false;
+  state.play.viewingLive = true;
+  state.play.clockMode = clockMode;
+  // Untimed still needs real countdown arithmetic (advanceClock, flag-fall
+  // guard) to emit valid [%clk] values, so it runs on a large nominal
+  // reservoir that 100 plies of the fixed assumption never gets close to
+  // draining; see PLAY_UNTIMED_RESERVOIR_SECONDS above.
+  state.play.baseSec = clockMode === "untimed" ? PLAY_UNTIMED_RESERVOIR_SECONDS : base;
+  state.play.incSec = clockMode === "untimed" ? 0 : inc;
+  state.play.tcLabel = playTimeControlLabel(base, inc);
+  state.play.moves = [];
+  state.play.clock = { w: state.play.baseSec, b: state.play.baseSec };
+  state.play.turnStartMs = performance.now();
+  state.play.requestSeq += 1;
+  state.play.inFlight = false;
+  state.play.dirty = false;
+  state.play.lastError = null;
+  if (state.play.abortController) state.play.abortController.abort();
+  state.play.abortController = null;
+  if (state.play.debounceTimer) {
+    clearTimeout(state.play.debounceTimer);
+    state.play.debounceTimer = null;
+  }
+
+  state.play.baselines = {
+    white: resolvePlayBaselineInput("white"),
+    black: resolvePlayBaselineInput("black"),
+  };
+
+  $("results-panel").hidden = false;
+  state.board.orientation("white");
+  state.board.position("start", false);
+  state.board.resize();
+  clearSquareHighlights();
+  $("results-title").textContent = "Play mode";
+  $("live-badge").hidden = true;
+  resetLiveSessionUi();
+  clearPlaySuspicionAndChart();
+  showPlayActiveControls();
+  // Unlike every other mode, Play's header never collapses: Undo, Reset,
+  // Pause and Export live in the same collapsible input panel as the setup
+  // form (showPlayActiveControls swaps the bulky setup form for a single
+  // compact control row), and collapsing it would put those controls behind
+  // the "Load game" toggle mid-game. renderResultInner's opts.play guard
+  // already skips the auto-collapse that every other mode's first render
+  // triggers, for the same reason.
+  refreshPlayBoardLocalUi();
+}
+
+function resetPlayGame() {
+  if (!state.play.active) return;
+  const chess = ensurePlayChess();
+  chess.reset();
+  state.play.moves = [];
+  state.play.clock = { w: state.play.baseSec, b: state.play.baseSec };
+  state.play.turnStartMs = performance.now();
+  state.play.over = false;
+  state.play.overReason = null;
+  state.play.resultTag = null;
+  state.play.paused = false;
+  state.play.viewingLive = true;
+  state.play.requestSeq += 1;
+  state.play.dirty = false;
+  if (state.play.abortController) state.play.abortController.abort();
+  if (state.play.debounceTimer) {
+    clearTimeout(state.play.debounceTimer);
+    state.play.debounceTimer = null;
+  }
+  state.board.position("start", false);
+  clearSquareHighlights();
+  clearPlaySuspicionAndChart();
+  showPlayActiveControls();
+  refreshPlayBoardLocalUi();
+}
+
+function undoPlayMove() {
+  if (!state.play.active || state.play.moves.length === 0) return;
+  const chess = state.play.chess;
+  const undone = chess.undo();
+  if (!undone) return;
+  const removed = state.play.moves.pop();
+  // Restore that side's clock to what it held before the undone move.
+  const priorSameColor = [...state.play.moves].reverse().find((m) => m.color === removed.color);
+  state.play.clock[removed.color] = priorSameColor ? priorSameColor.clockSec : state.play.baseSec;
+  state.play.over = false;
+  state.play.overReason = null;
+  state.play.resultTag = null;
+  state.play.viewingLive = true;
+  state.play.turnStartMs = performance.now();
+  state.play.requestSeq += 1; // any in-flight analysis is now for a move list that no longer exists
+  if (state.play.abortController) state.play.abortController.abort();
+  state.board.position(chess.fen(), false);
+  if (state.play.moves.length > 0) {
+    refreshPlayBoardLocalUi();
+    schedulePlayAnalysis();
+  } else {
+    clearPlaySuspicionAndChart();
+    refreshPlayBoardLocalUi();
+  }
+}
+
+function togglePlayPause() {
+  if (state.play.clockMode !== "live" || state.play.over) return;
+  const chess = state.play.chess;
+  if (state.play.paused) {
+    state.play.paused = false;
+    state.play.turnStartMs = performance.now();
+  } else {
+    // Bank the elapsed time against the side to move now, so paused time is
+    // never counted as think time once play resumes. Skip it on that side's
+    // own first move, which never ticks (see applyPlayMoveAfterChessMove).
+    const color = chess.turn();
+    if (state.play.moves.some((m) => m.color === color)) {
+      const elapsed = Math.max(0, (performance.now() - state.play.turnStartMs) / 1000);
+      state.play.clock[color] = Math.max(0, state.play.clock[color] - elapsed);
+    }
+    state.play.paused = true;
+  }
+  $("play-pause-button").textContent = state.play.paused ? "Resume" : "Pause";
+  refreshPlayBoardLocalUi();
+}
+
+function exportPlayPgn() {
+  const pgn = buildPlayPgn();
+  const blob = new Blob([pgn], { type: "application/x-chess-pgn" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ratingnet-play-${Date.now()}.pgn`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// --- Making a move ------------------------------------------------------------
+
+function canDragPlayPiece(source, piece) {
+  if (!playOnScreen() || state.play.over || state.play.paused) return false;
+  if (!state.play.viewingLive) return false;
+  const chess = state.play.chess;
+  if (!chess) return false;
+  return Boolean(piece) && piece[0] === chess.turn();
+}
+
+function onPlayPieceDrop(source, target) {
+  const chess = state.play.chess;
+  // Always offer a promotion piece (auto-queen); chess.js ignores the field
+  // on a non-promoting move, per its own move() contract.
+  const moveObj = chess.move({ from: source, to: target, promotion: "q" });
+  if (!moveObj) return "snapback";
+  applyPlayMoveAfterChessMove(moveObj);
+  return undefined;
+}
+
+function onPlayBoardSnapEnd() {
+  if (playOnScreen() && state.play.viewingLive && state.play.chess) {
+    state.board.position(state.play.chess.fen());
+  }
+}
+
+function applyPlayMoveAfterChessMove(moveObj) {
+  const color = moveObj.color; // "w" | "b"
+  const now = performance.now();
+  const cur = state.play.clock[color];
+  const k = state.play.moves.filter((m) => m.color === color).length; // this side's 0-based move index so far
+
+  let reported;
+  let actualSpend;
+  let simX = null;
+
+  if (state.play.clockMode === "live") {
+    if (k === 0) {
+      // Lichess convention, confirmed against src/static/samples/*.pgn (e.g.
+      // rapid_best_predicted.pgn: both the game's first ply and the second
+      // report the TimeControl base unchanged): a side's own first move
+      // neither ticks the clock down nor receives the increment.
+      reported = cur;
+      actualSpend = 0;
+    } else {
+      const spent = Math.max(0, (now - (state.play.turnStartMs ?? now)) / 1000);
+      const after = Math.max(0, cur - spent);
+      reported = after + state.play.incSec;
+      actualSpend = cur - after;
+    }
+  } else if (state.play.clockMode === "simulated") {
+    const { share, x } = simShareForMove(k);
+    const adv = simAdvanceClock(cur, share, state.play.incSec);
+    reported = adv.reported;
+    actualSpend = adv.actualSpend;
+    simX = x;
+  } else {
+    actualSpend = PLAY_UNTIMED_ASSUMED_SECONDS_PER_MOVE;
+    reported = Math.max(0, cur - actualSpend) + state.play.incSec;
+  }
+
+  state.play.clock[color] = reported;
+  state.play.turnStartMs = now;
+  state.play.moves.push({
+    san: moveObj.san,
+    uci: `${moveObj.from}${moveObj.to}${moveObj.promotion || ""}`,
+    color,
+    clockSec: reported,
+    thinkSpentSec: actualSpend,
+    simX,
+  });
+  state.play.viewingLive = true;
+
+  checkPlayGameOver();
+  refreshPlayBoardLocalUi();
+  schedulePlayAnalysis();
+}
+
+// Recomputes the simulated-clock chain from ply `index` forward after the
+// user overrides that move's think time: the stored lognormal draw (simX) for
+// every later move of the same game is kept fixed, and only its spend is
+// recomputed against the new remaining-time chain it flows from.
+function recomputePlaySimulatedClocksFrom(index) {
+  const moves = state.play.moves;
+  const clock = { w: state.play.baseSec, b: state.play.baseSec };
+  for (const m of moves.slice(0, index)) {
+    clock[m.color] = m.clockSec;
+  }
+  for (let i = index; i < moves.length; i++) {
+    const m = moves[i];
+    const cur = clock[m.color];
+    // Every ply the user has ever overridden (not only the one just edited)
+    // keeps its override on a recompute, so overriding an earlier ply after
+    // a later one never silently erases the later override.
+    if (m.overrideSpendSec != null) {
+      const spend = Math.max(0, Math.min(m.overrideSpendSec, cur - SIM_CLOCK_FLOOR_S));
+      m.thinkSpentSec = spend;
+      m.clockSec = Math.max(SIM_CLOCK_FLOOR_S, cur - spend) + state.play.incSec;
+    } else {
+      // simX alone is not the share; recompute the share the same way it was
+      // first drawn (phase(k) * x / n_k) using this move's own per-side index,
+      // against the (possibly now-different) remaining time flowing in.
+      const k = moves.slice(0, i).filter((mm) => mm.color === m.color).length;
+      const nK = Math.max(SIM_CLOCK_N_FLOOR, SIM_CLOCK_N_EXPECTED - k);
+      const share = (simClockPhase(k) * m.simX) / nK;
+      const adv = simAdvanceClock(cur, share, state.play.incSec);
+      m.thinkSpentSec = adv.actualSpend;
+      m.clockSec = adv.reported;
+    }
+    clock[m.color] = m.clockSec;
+  }
+  state.play.clock = { w: clock.w, b: clock.b };
+}
+
+// Simulated clock only: lets the user type a different think time for a
+// past move; recomputes that move's spend and every later move's spend
+// forward from it (see recomputePlaySimulatedClocksFrom), then re-schedules
+// analysis. Triggered from a move-list time chip's click handler.
+function overridePlaySimulatedSeconds(ply) {
+  if (state.play.clockMode !== "simulated") return;
+  const index = ply - 1;
+  const move = state.play.moves[index];
+  if (!move) return;
+  const raw = window.prompt(`Seconds spent on ${move.san} (ply ${ply}):`, Math.round(move.thinkSpentSec));
+  if (raw === null) return;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return;
+  move.overrideSpendSec = seconds;
+  recomputePlaySimulatedClocksFrom(index);
+  state.play.viewingLive = true;
+  refreshPlayBoardLocalUi();
+  schedulePlayAnalysis();
+}
+
+function checkPlayGameOver() {
+  const chess = state.play.chess;
+  if (!chess) return;
+  if (chess.in_checkmate()) {
+    finishPlayGame(chess.turn() === "w" ? "0-1" : "1-0", "checkmate");
+  } else if (chess.in_stalemate()) {
+    finishPlayGame("1/2-1/2", "stalemate");
+  } else if (chess.insufficient_material()) {
+    finishPlayGame("1/2-1/2", "insufficient_material");
+  } else if (chess.in_threefold_repetition()) {
+    finishPlayGame("1/2-1/2", "threefold");
+  } else if (chess.in_draw()) {
+    finishPlayGame("1/2-1/2", "draw"); // fifty-move rule
+  }
+}
+
+function finishPlayGame(resultTag, reason) {
+  state.play.over = true;
+  state.play.overReason = reason;
+  state.play.resultTag = resultTag;
+  stopPlayClockTimer();
+}
+
+// --- Live ticking clock (Live clock mode only) -------------------------------
+
+function playClockShouldTick() {
+  return Boolean(
+    state.play.active &&
+      state.activeTab === "play" && // don't paint over another tab's board/clocks while away
+      state.play.clockMode === "live" &&
+      !state.play.over &&
+      !state.play.paused &&
+      state.play.viewingLive &&
+      state.play.turnStartMs !== null &&
+      !document.hidden
+  );
+}
+
+function tickPlayClock() {
+  if (!playClockShouldTick()) {
+    syncPlayClockTicker();
+    return;
+  }
+  const chess = state.play.chess;
+  const color = chess.turn();
+  // A side's own first move is free (see applyPlayMoveAfterChessMove); mirror
+  // that in the display by not counting down until they have made one move.
+  const hasMovedBefore = state.play.moves.some((m) => m.color === color);
+  const remaining = hasMovedBefore
+    ? Math.max(0, state.play.clock[color] - (performance.now() - state.play.turnStartMs) / 1000)
+    : state.play.clock[color];
+  const sideKey = color === "w" ? "white" : "black";
+  const position = barPositionForSide(sideKey);
+  const otherPosition = position === "top" ? "bottom" : "top";
+  const clockEl = $(`bar-${position}-clock`);
+  clockEl.hidden = false;
+  clockEl.textContent = formatLiveClock(remaining);
+  clockEl.classList.toggle("low", remaining < LOW_CLOCK_SECONDS);
+  clockEl.classList.add("active");
+  $(`bar-${otherPosition}-clock`).classList.remove("active");
+  if (hasMovedBefore && remaining <= 0) {
+    finishPlayGame(color === "w" ? "0-1" : "1-0", "flag");
+    refreshPlayBoardLocalUi();
+  }
+}
+
+function syncPlayClockTicker() {
+  const should = playClockShouldTick();
+  if (should && !state.play.tickTimer) {
+    state.play.tickTimer = setInterval(tickPlayClock, PLAY_CLOCK_TICK_MS);
+    tickPlayClock();
+  } else if (!should && state.play.tickTimer) {
+    clearInterval(state.play.tickTimer);
+    state.play.tickTimer = null;
+  }
+}
+
+function stopPlayClockTimer() {
+  if (state.play.tickTimer) {
+    clearInterval(state.play.tickTimer);
+    state.play.tickTimer = null;
+  }
+}
+
+// --- PGN construction -----------------------------------------------------
+
+function playPadTwo(n) {
+  return String(n).padStart(2, "0");
+}
+
+// Mirrors format_data.time_to_seconds / the Lichess [%clk H:MM:SS] format.
+function playSecondsToClockStr(totalSeconds) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h}:${playPadTwo(m)}:${playPadTwo(s)}`;
+}
+
+function playPgnDateHeader() {
+  const now = new Date();
+  return `${now.getFullYear()}.${playPadTwo(now.getMonth() + 1)}.${playPadTwo(now.getDate())}`;
+}
+
+function playTimeControlHeaderValue() {
+  if (state.play.clockMode === "untimed") return "-";
+  return `${state.play.baseSec}+${state.play.incSec}`;
+}
+
+function buildPlayHeaders() {
+  return {
+    Event: "RatingNet Play mode",
+    Site: "?",
+    Date: playPgnDateHeader(),
+    Round: "-",
+    White: "White",
+    Black: "Black",
+    Result: state.play.over ? state.play.resultTag : "*",
+    TimeControl: playTimeControlHeaderValue(),
+  };
+}
+
+// Built from the SAN/clock history this module tracks directly, not from
+// chess.js's own comment storage, so the [%clk] values sent to the API are
+// exactly the ones this module already computed and displays.
+// `forAnalysis: true` truncates to PLAY_MAX_PLIES to match what parse_game
+// will actually score (see the status box note once a game passes that
+// length); the export must keep every move actually played, truncated or not.
+function buildPlayPgn({ forAnalysis = false } = {}) {
+  const headers = buildPlayHeaders();
+  const headerLines = Object.entries(headers)
+    .map(([key, value]) => `[${key} "${value}"]`)
+    .join("\n");
+  const moves = forAnalysis ? state.play.moves.slice(0, PLAY_MAX_PLIES) : state.play.moves;
+  const bodyParts = [];
+  for (let i = 0; i < moves.length; i++) {
+    if (i % 2 === 0) bodyParts.push(`${Math.floor(i / 2) + 1}.`);
+    bodyParts.push(`${moves[i].san} {[%clk ${playSecondsToClockStr(moves[i].clockSec)}]}`);
+  }
+  bodyParts.push(headers.Result);
+  return `${headerLines}\n\n${bodyParts.join(" ")}\n`;
+}
+
+// --- Debounced, serialized re-scoring ----------------------------------------
+
+function schedulePlayAnalysis() {
+  state.play.dirty = true;
+  if (state.play.debounceTimer) clearTimeout(state.play.debounceTimer);
+  state.play.debounceTimer = setTimeout(() => {
+    state.play.debounceTimer = null;
+    runPlayAnalysis();
+  }, PLAY_ANALYZE_DEBOUNCE_MS);
+}
+
+// At most one request in flight at a time: a move made while one is already
+// running just marks `dirty` (schedulePlayAnalysis debounces it), and the
+// in-flight request re-fires itself once on completion if anything changed
+// meanwhile. undo/reset bump requestSeq and abort the in-flight request, so a
+// response for a move list that no longer exists is dropped, never rendered.
+async function runPlayAnalysis() {
+  if (state.play.inFlight || !state.play.active || state.play.moves.length === 0) return;
+  state.play.dirty = false;
+  state.play.inFlight = true;
+  const seqAtSend = state.play.requestSeq;
+  const controller = new AbortController();
+  state.play.abortController = controller;
+
+  const pgn = buildPlayPgn({ forAnalysis: true });
+  const topK = currentTopK();
+  const minPly = currentMinPly();
+  const body = JSON.stringify({
+    pgn,
+    white_baseline: state.play.baselines.white.rating,
+    black_baseline: state.play.baselines.black.rating,
+  });
+
+  let response = null;
+  let networkErr = null;
+  try {
+    response = await fetch(`${API_BASE}/predict/pgn?top_k=${topK}&min_ply=${minPly}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    networkErr = err;
+  }
+
+  state.play.inFlight = false;
+  if (seqAtSend !== state.play.requestSeq) return; // superseded by undo/reset; drop silently
+
+  if (networkErr) {
+    if (networkErr.name !== "AbortError") {
+      state.play.lastError = `Could not reach the API: ${networkErr.message}`;
+      renderPlayStatusBox();
+    }
+  } else if (response.status === 503) {
+    state.play.lastError = "Scoring queue is busy; retrying...";
+    renderPlayStatusBox();
+    setTimeout(() => schedulePlayAnalysis(), 1200);
+  } else if (!response.ok) {
+    state.play.lastError = await parseErrorDetail(response);
+    renderPlayStatusBox();
+  } else {
+    state.play.lastError = null;
+    const result = await response.json();
+    // If the user switched away from Play while this was in flight, don't
+    // paint over whatever tab is now on screen; just keep the result ready
+    // for when renderResultInner picks up Play again (see setupTabs).
+    if (playOnScreen()) {
+      renderResult(result, { play: true });
+    } else {
+      state.play.result = result;
+    }
+  }
+
+  if (state.play.dirty && state.play.active) {
+    runPlayAnalysis();
+  }
+}
+
+// --- Rendering: board/bars sync, status box, too-short gate ------------------
+
+// Called from renderResultInner for opts.play once an analysis response has
+// landed; the board itself is never driven by `result` (see module comment).
+function syncPlayBoardAndBars() {
+  state.play.result = state.result;
+  if (!state.play.viewingLive) {
+    renderBoardAtPly(state.currentPly, { fromAutoplay: true });
+    return;
+  }
+  state.board.position(state.play.chess ? state.play.chess.fen() : "start", false);
+  refreshPlayBoardLocalUi();
+}
+
+// The single, always-safe refresh for Play mode's own UI: board ply/highlight,
+// player bars, metrics panel, move-list highlight, status box and clock
+// ticker. Safe to call before any analysis response has ever arrived (metrics
+// panel and bars degrade to placeholders) and safe to call with a `state.result`
+// that lags the local move list by one move (every index is clamped).
+function refreshPlayBoardLocalUi() {
+  const latestPly = state.play.moves.length;
+  state.currentPly = latestPly;
+  $("ply-indicator").textContent = `${latestPly} / ${latestPly}`;
+  highlightMoveSquares(latestPly ? state.play.moves[latestPly - 1].uci : null);
+  renderPlayerBarsForPlay();
+  renderPlayMetricsPanel();
+  const clampedForList = Math.min(latestPly, Math.max(0, state.fenAtPly.length - 1));
+  markActiveMoveListEntry(clampedForList);
+  renderPlayStatusBox();
+  syncPlayClockTicker();
+}
+
+function renderPlayerBarsForPlay() {
+  const perMove = (state.play.result && state.play.result.per_move) || [];
+  const whiteEst = perMove.length ? perMove[perMove.length - 1].white_rating : null;
+  const blackEst = perMove.length ? perMove[perMove.length - 1].black_rating : null;
+  const toMove = state.play.over || !state.play.chess ? null : state.play.chess.turn();
+
+  setPlayerBar(barPositionForSide("white"), {
+    side: "white",
+    name: "White",
+    current: whiteEst != null ? whiteEst : state.play.baselines.white.rating ?? 1500,
+    actual: null,
+    clockSeconds: state.play.clock.w,
+    synthesizedClock: false,
+    toMove: toMove === "w",
+  });
+  setPlayerBar(barPositionForSide("black"), {
+    side: "black",
+    name: "Black",
+    current: blackEst != null ? blackEst : state.play.baselines.black.rating ?? 1500,
+    actual: null,
+    clockSeconds: state.play.clock.b,
+    synthesizedClock: false,
+    toMove: toMove === "b",
+  });
+}
+
+function renderPlayMetricsPanel() {
+  if (!state.result) {
+    $("metrics-title").textContent = "Start position";
+    $("metrics-content").innerHTML = '<p class="move-list-empty">Play a move to see move details here.</p>';
+    return;
+  }
+  const ply = Math.min(state.play.moves.length, Math.max(0, state.fenAtPly.length - 1));
+  renderMetricsPanel(ply);
+}
+
+// Blanks the suspicion card, chart and move list back to an empty-game state:
+// used when Play mode starts, resets, or is undone back to zero moves, none
+// of which can call the analysis API (it needs at least one scored ply).
+function clearPlaySuspicionAndChart() {
+  state.result = null;
+  state.play.result = null;
+  state.fenAtPly = ["start"];
+  state.attentionRanks = new Map();
+  state.criticalByPly = new Map();
+  state.criticalCounts = { white: 0, black: 0 };
+  for (const side of ["white", "black"]) {
+    const valueEl = $(`${side}-suspicion-value`);
+    valueEl.textContent = "-";
+    delete valueEl.dataset.score;
+    valueEl.title = "Play a move to get a score.";
+    renderSuspicionScale(side, 0, null, null, false);
+  }
+  $("suspicion-method-unavailable").hidden = true;
+  $("suspicion-baseline-warning").hidden = ![state.play.baselines.white.source, state.play.baselines.black.source].includes(
+    "self_prediction_fallback"
+  );
+  $("suspicion-label-info").hidden = true;
+  $("suspicion-label-provisional").hidden = true;
+  if (state.chart) {
+    state.chart.destroy();
+    state.chart = null;
+  }
+  renderMoveList([]);
+  $("warnings-box").hidden = true;
+  $("warnings-box").innerHTML = "";
+  $("sample-meta-box").hidden = true;
+  $("provisional-badge").hidden = true;
+}
+
+// See PLAY_MIN_PLIES_FOR_SUSPICION above: blanks an uncalibrated score back to
+// the same "-" state the app already uses when a method is unavailable,
+// instead of showing a number the cutoffs were never validated at this length.
+function applyPlayTooShortSuspicionOverride(plyCount) {
+  if (plyCount >= PLAY_MIN_PLIES_FOR_SUSPICION) return;
+  // The score and its Typical/Unusual/Highly unusual label are real (every
+  // method scores any game with at least one ply); only the percentile
+  // cutoffs behind the label were fitted on real held-out games with at
+  // least 20 plies (suspicion_cutoffs.json's source_description). So this
+  // does not hide anything, unlike an unavailable method: it only appends a
+  // caveat to each value's tooltip, since a shorter game's label rests on
+  // cutoffs fitted to longer games.
+  const note = `Labels are calibrated on games of ${PLAY_MIN_PLIES_FOR_SUSPICION} plies or more (this game has ${plyCount} so far); read this one with that in mind.`;
+  for (const side of ["white", "black"]) {
+    const valueEl = $(`${side}-suspicion-value`);
+    valueEl.title = valueEl.title ? `${valueEl.title} ${note}` : note;
+  }
+}
+
+function playClockModeLabel() {
+  if (state.play.clockMode === "untimed") return "Untimed";
+  const kind = state.play.clockMode === "live" ? "Live" : "Simulated";
+  return `${kind} clock, ${state.play.tcLabel}`;
+}
+
+function playOverReasonText() {
+  const map = {
+    checkmate: "checkmate",
+    stalemate: "stalemate",
+    draw: "draw (fifty-move rule)",
+    insufficient_material: "insufficient material",
+    threefold: "threefold repetition",
+    flag: "flag fall",
+  };
+  return map[state.play.overReason] || "game over";
+}
+
+function renderPlayStatusBox() {
+  const box = $("play-status-box");
+  if (!playOnScreen()) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  const b = state.play.baselines;
+  const plyCount = state.play.moves.length;
+  const rows = [];
+  rows.push(`<div class="play-status-row"><strong>Clock:</strong> ${escapeHtml(playClockModeLabel())}</div>`);
+  rows.push(`<div class="play-status-row"><strong>White baseline:</strong> ${escapeHtml(b.white.label || "self-estimated")}</div>`);
+  rows.push(`<div class="play-status-row"><strong>Black baseline:</strong> ${escapeHtml(b.black.label || "self-estimated")}</div>`);
+  if (plyCount > 0 && plyCount < PLAY_MIN_PLIES_FOR_SUSPICION) {
+    rows.push(
+      `<div class="play-status-row play-status-note">Suspicion labels are calibrated on games of ${PLAY_MIN_PLIES_FOR_SUSPICION} plies or more (${plyCount} so far); read this one with that in mind.</div>`
+    );
+  }
+  if (plyCount >= PLAY_MAX_PLIES) {
+    rows.push(
+      `<div class="play-status-row play-status-note">Analysis covers only the first ${PLAY_MAX_PLIES} plies; further moves are recorded but not re-scored.</div>`
+    );
+  }
+  if (state.play.clockMode === "untimed") {
+    rows.push(
+      `<div class="play-status-row play-status-warn">Untimed: a fixed ${PLAY_UNTIMED_ASSUMED_SECONDS_PER_MOVE}s assumed think time is used for every move, so the rating estimate is less reliable (clock time is a model input).</div>`
+    );
+  }
+  if (state.play.inFlight) {
+    rows.push('<div class="play-status-row play-status-note">Scoring...</div>');
+  } else if (state.play.lastError) {
+    rows.push(`<div class="play-status-row play-status-warn">${escapeHtml(state.play.lastError)}</div>`);
+  }
+  if (state.play.over) {
+    rows.push(`<div class="play-status-row play-status-note">Game over: ${escapeHtml(playOverReasonText())}.</div>`);
+  }
+  box.innerHTML = rows.join("");
+  box.hidden = false;
+}
+
+function showPlayActiveControls() {
+  $("play-setup").hidden = true;
+  $("play-active-controls").hidden = false;
+  $("play-pause-button").hidden = state.play.clockMode !== "live";
+  $("play-pause-button").textContent = state.play.paused ? "Resume" : "Pause";
+  $("play-mode-summary").textContent = playClockModeLabel();
+}
+
+// --- Wiring -------------------------------------------------------------------
+
+function setupPlayTab() {
+  setupPlayTimeControlPresets();
+  document.querySelectorAll('input[name="play-clock-mode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      // Untimed ignores the chosen time control entirely (see
+      // PLAY_UNTIMED_RESERVOIR_SECONDS); gray the picker out so it does not
+      // look like it is still driving anything, including the Lichess perf
+      // type the baseline fetch buttons use.
+      $("play-time-control").classList.toggle("is-untimed", selectedPlayClockMode() === "untimed");
+    });
+  });
+  $("play-white-fetch").addEventListener("click", () => fetchPlayLichessBaseline("white"));
+  $("play-black-fetch").addEventListener("click", () => fetchPlayLichessBaseline("black"));
+  $("play-start-button").addEventListener("click", startPlayGame);
+  $("play-undo-button").addEventListener("click", undoPlayMove);
+  $("play-reset-button").addEventListener("click", resetPlayGame);
+  $("play-pause-button").addEventListener("click", togglePlayPause);
+  $("play-export-button").addEventListener("click", exportPlayPgn);
+}
+
 function init() {
   setupThemeToggle();
   setupTabs();
@@ -2380,6 +3523,7 @@ function init() {
   setupLiveControls();
   setupLiveClockVisibility();
   setupLiveNetworkEvents();
+  setupPlayTab();
   setupActualRatingToggle();
   setupInfoPopovers();
   renderMetricsGlossary();
