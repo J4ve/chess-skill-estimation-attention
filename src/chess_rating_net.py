@@ -252,6 +252,10 @@ class ChessEloPredictor(nn.Module):
         attention_type: ``bahdanau`` or ``self``.
         attention_dim: Projection size for Bahdanau attention.
         use_anomaly: If True, expose an anomaly detector branch.
+        separate_heads: If True, give White and Black their own rating head
+            (each its own ``fc1``+``fc2``) instead of the shared ``fc1`` feeding
+            one ``Linear(fc1_h, 2)``. Off by default, and when off the module
+            list, the parameter names and the forward pass are unchanged.
     """
 
     def __init__(
@@ -267,11 +271,13 @@ class ChessEloPredictor(nn.Module):
         attention_dim: int = 64,
         use_anomaly: bool = False,
         deeper_cnn: bool = False,
+        separate_heads: bool = False,
     ):
         super().__init__()
         self.use_attention = use_attention
         self.use_anomaly = use_anomaly
         self.deeper_cnn = deeper_cnn
+        self.separate_heads = separate_heads
         self.bidirectional = bidirectional
         self.lstm_h = lstm_h
 
@@ -321,9 +327,23 @@ class ChessEloPredictor(nn.Module):
             else:
                 raise ValueError(f"Unknown attention_type: {attention_type}")
 
-        # Rating head (identical to baseline)
-        self.fc1 = nn.Linear(lstm_output_dim, fc1_h)
-        self.fc2 = nn.Linear(fc1_h, 2)
+        # Rating head.  Default: identical to baseline, one shared fc1 feeding a
+        # single Linear(fc1_h, 2) whose two rows are the White and Black outputs.
+        #
+        # separate_heads splits the head into two independent per-side stacks.
+        # Note that splitting only the final Linear(fc1_h, 2) into two
+        # Linear(fc1_h, 1) layers would be an exact reparameterization: the two
+        # rows of fc2 are already independent parameters, so that change alone
+        # cannot make the sides differ.  The branch therefore starts one layer
+        # earlier, at fc1, so each side owns the hidden projection that feeds it.
+        if separate_heads:
+            self.fc1_white = nn.Linear(lstm_output_dim, fc1_h)
+            self.fc2_white = nn.Linear(fc1_h, 1)
+            self.fc1_black = nn.Linear(lstm_output_dim, fc1_h)
+            self.fc2_black = nn.Linear(fc1_h, 1)
+        else:
+            self.fc1 = nn.Linear(lstm_output_dim, fc1_h)
+            self.fc2 = nn.Linear(fc1_h, 2)
 
         # Optional anomaly branch
         self.anomaly_detector: nn.Module | None = None
@@ -394,9 +414,16 @@ class ChessEloPredictor(nn.Module):
                 # SelfAttention already returns (batch, seq) step_importance
                 attention_weights = attn_weights_raw
 
-        y = F.leaky_relu(self.fc1(rating_input))
-        y = self.dropout1(y)
-        per_move_preds = self.fc2(y)
+        if self.separate_heads:
+            y_w = self.dropout1(F.leaky_relu(self.fc1_white(rating_input)))
+            y_b = self.dropout1(F.leaky_relu(self.fc1_black(rating_input)))
+            # (batch, seq, 1) each -> (batch, seq, 2), column 0 White, 1 Black,
+            # so every downstream consumer sees the baseline output shape.
+            per_move_preds = torch.cat((self.fc2_white(y_w), self.fc2_black(y_b)), dim=-1)
+        else:
+            y = F.leaky_relu(self.fc1(rating_input))
+            y = self.dropout1(y)
+            per_move_preds = self.fc2(y)
 
         idx = torch.arange(batch_size, device=positions.device)
         last_time_step_output = per_move_preds[idx, lengths - 1, :]
@@ -439,6 +466,99 @@ class ChessEloPredictor(nn.Module):
                 )
 
 
+# --- White/Black separation experiment (both halves off by default) ---------
+#
+# Motivation: the released architecture's two rating outputs come out nearly
+# identical within a game (median per-game spread 0.71 rating points across the
+# 255,000 held-out test games, and the two rows of ``fc2`` have cosine
+# similarity 0.9999).  Nothing in the objective rewards telling the sides apart,
+# and Lichess pairs close opponents, so one shared estimate is almost free.
+#
+# GAP_WEIGHT_SCALE/GAP_WEIGHT_CAP define the Arm A weighting.  The scale is set
+# so that the 300-point gap used as the wide-gap threshold in the mirroring
+# analysis receives weight 4, i.e. four times an evenly matched game.  The cap
+# bounds the rare extremes: the widest real gap in the test partition is 1,837
+# points, which would otherwise carry over 19 times the weight of an even game
+# and let a few hundred games dominate the gradient.
+GAP_WEIGHT_SCALE = 100.0
+GAP_WEIGHT_CAP = 10.0
+
+
+def gap_weights(
+    white_elos: torch.Tensor,
+    black_elos: torch.Tensor,
+    scale: float = GAP_WEIGHT_SCALE,
+    cap: float = GAP_WEIGHT_CAP,
+) -> torch.Tensor:
+    """Per-game loss weight that grows with the two players' rating gap.
+
+    ``w = min(1 + |white_elo - black_elo| / scale, cap)``, so an evenly matched
+    game keeps weight 1 and a 300-point mismatch counts four times as much.
+    Elos are raw rating points, not standardized.
+    """
+    gap = torch.abs(white_elos - black_elos)
+    return torch.clamp(1.0 + gap / scale, max=cap)
+
+
+def side_abs_error(preds_elo: torch.Tensor, targets_elo: torch.Tensor) -> torch.Tensor:
+    """Mean absolute per-side error of each game, in rating points. (B,2) -> (B,)."""
+    return torch.abs(preds_elo - targets_elo).mean(dim=1)
+
+
+def rating_gap_abs_error(preds_elo: torch.Tensor, targets_elo: torch.Tensor) -> torch.Tensor:
+    """Absolute error of the predicted White-minus-Black difference. (B,2) -> (B,).
+
+    This is the term that penalizes the mirrored solution directly: when the two
+    outputs are equal the predicted difference is zero, so this equals the true
+    rating gap no matter how good the per-side estimates are.
+    """
+    pred_diff = preds_elo[:, 0] - preds_elo[:, 1]
+    true_diff = targets_elo[:, 0] - targets_elo[:, 1]
+    return torch.abs(pred_diff - true_diff)
+
+
+def separation_training_loss(
+    preds_elo: torch.Tensor,
+    targets_elo: torch.Tensor,
+    white_elos: torch.Tensor | None = None,
+    black_elos: torch.Tensor | None = None,
+    gap_weighting: bool = False,
+    diff_loss_weight: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Training loss for the White/Black separation arms, in rating points.
+
+    Returns ``(total, side_term, diff_term)``; ``diff_term`` is None when the
+    difference loss is off.  With both options off the side term is the plain
+    mean absolute error over every per-side output, the same quantity
+    ``nn.L1Loss`` produces, but the trainer keeps using ``nn.L1Loss`` on that
+    path so the unflagged run is bit-for-bit what it always was.
+
+    ``gap_weighting`` turns the side term into a weighted mean with weights from
+    ``gap_weights``.  A weighted *mean* (dividing by the summed weight rather
+    than the count) keeps the loss in rating points and on the same scale as the
+    unweighted arm, so the learning rate carries over unchanged.
+    """
+    per_game = side_abs_error(preds_elo, targets_elo)
+    weights = None
+    if gap_weighting:
+        if white_elos is None or black_elos is None:
+            raise ValueError("gap_weighting needs white_elos and black_elos")
+        weights = gap_weights(white_elos, black_elos)
+        side = (weights * per_game).sum() / weights.sum()
+    else:
+        side = per_game.mean()
+
+    if diff_loss_weight <= 0.0:
+        return side, side, None
+
+    per_game_diff = rating_gap_abs_error(preds_elo, targets_elo)
+    if weights is not None:
+        diff = (weights * per_game_diff).sum() / weights.sum()
+    else:
+        diff = per_game_diff.mean()
+    return side + diff_loss_weight * diff, side, diff
+
+
 def train_one_epoch(
     model: nn.Module,
     train_loader: DataLoader,
@@ -448,6 +568,9 @@ def train_one_epoch(
     ratings_mean: float = 1514,
     ratings_std: float = 366,
     dense_supervision: bool = False,
+    gap_weighting: bool = False,
+    diff_loss_weight: float = 0.0,
+    loss_components: dict[str, float] | None = None,
 ) -> float:
     """Train for one epoch.
 
@@ -455,9 +578,18 @@ def train_one_epoch(
     **every valid ply** (padding excluded) rather than only the last ply.
     The rating label is constant across the game, so every ply is a valid
     training target.  Evaluation remains last-ply-only.
+
+    ``gap_weighting`` and ``diff_loss_weight`` are the two White/Black
+    separation arms; see ``separation_training_loss``.  Both are off by
+    default, and when both are off this function takes exactly the code path it
+    always did.  ``loss_components``, when given, is filled with the epoch-mean
+    side and difference terms so a run's log shows them moving separately.
     """
+    use_separation = gap_weighting or diff_loss_weight > 0.0
     model.train()
     total_train_loss = 0.0
+    total_side = 0.0
+    total_diff = 0.0
     for batch in train_loader:
         positions = batch["positions"].to(device)
         clocks = batch["clocks"].to(device)
@@ -466,7 +598,19 @@ def train_one_epoch(
         optimizer.zero_grad()
         per_move_preds, last_step_preds = model(positions, clocks, lengths)
 
-        if dense_supervision:
+        if use_separation:
+            loss, side_term, diff_term = separation_training_loss(
+                last_step_preds * ratings_std + ratings_mean,
+                targets * ratings_std + ratings_mean,
+                white_elos=batch["white_elos"].to(device),
+                black_elos=batch["black_elos"].to(device),
+                gap_weighting=gap_weighting,
+                diff_loss_weight=diff_loss_weight,
+            )
+            total_side += side_term.item()
+            if diff_term is not None:
+                total_diff += diff_term.item()
+        elif dense_supervision:
             # Expand targets to (batch, seq, 2) — same label for every ply.
             batch_size, seq_len, _ = per_move_preds.shape
             targets_expanded = targets.unsqueeze(1).expand(batch_size, seq_len, 2)
@@ -489,7 +633,11 @@ def train_one_epoch(
         loss.backward()
         optimizer.step()
         total_train_loss += loss.item()
-    return total_train_loss / len(train_loader)
+    n_batches = len(train_loader)
+    if loss_components is not None and use_separation:
+        loss_components["side"] = total_side / n_batches
+        loss_components["diff"] = total_diff / n_batches
+    return total_train_loss / n_batches
 
 
 def validate(
@@ -724,6 +872,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attention_dim", type=int, default=64, help="Bahdanau attention projection size")
     parser.add_argument("--dense_supervision", action="store_true", default=False,
                         help="Supervise every valid ply (not just the last) during training")
+    parser.add_argument("--gap_weighting", action="store_true", default=False,
+                        help="Arm A of the White/Black separation experiment: weight each game's "
+                             "loss by min(1 + |white_elo - black_elo| / 100, 10). Off by default.")
+    parser.add_argument("--separate_heads", action="store_true", default=False,
+                        help="Arm B architecture: give White and Black their own rating head "
+                             "(own fc1 and fc2) instead of one shared Linear(fc1_h, 2). Off by default.")
+    parser.add_argument("--diff_loss_weight", type=float, default=0.0,
+                        help="Arm B objective: weight of the |predicted minus true White-Black rating "
+                             "difference| term added to the per-side loss. 0 disables it (default).")
     parser.add_argument("--ratings_mean", type=float, default=1514,
                         help="Rating normalization mean. Default is the baseline paper's constant; "
                              "do not change for the primary/comparable runs (see AGENTS.md).")
@@ -778,11 +935,22 @@ def main() -> int:
         "use_anomaly": args.use_anomaly,
         "deeper_cnn": args.deeper_cnn,
         "dense_supervision": args.dense_supervision,
+        "gap_weighting": args.gap_weighting,
+        "separate_heads": args.separate_heads,
+        "diff_loss_weight": args.diff_loss_weight,
         "seed": args.seed,
         "split_seed": args.split_seed,
         "ratings_mean": args.ratings_mean,
         "ratings_std": args.ratings_std,
     }
+
+    if args.dense_supervision and (args.gap_weighting or args.diff_loss_weight > 0.0):
+        raise SystemExit(
+            "--dense_supervision cannot be combined with --gap_weighting or "
+            "--diff_loss_weight: the separation losses are defined on the last ply only."
+        )
+    if args.diff_loss_weight < 0.0:
+        raise SystemExit("--diff_loss_weight must be zero or positive")
 
     data_dir = args.data_dir
     experiment_name = args.experiment
@@ -858,6 +1026,7 @@ def main() -> int:
         attention_dim=params["attention_dim"],
         use_anomaly=params["use_anomaly"],
         deeper_cnn=params.get("deeper_cnn", False),
+        separate_heads=params.get("separate_heads", False),
     ).to(device)
 
     optimizer = torch.optim.Adam(
@@ -876,6 +1045,31 @@ def main() -> int:
     if args.resume:
         print(f"Resuming from {args.resume}")
         ckpt = load_checkpoint(args.resume, model, optimizer, device, scheduler=scheduler)
+        # A resume rebuilds the model and the objective from the CLI, not from the
+        # checkpoint, so a launcher that forgets a flag would quietly carry on
+        # training a different experiment under the same name. That has already
+        # cost this project one full re-run (see hpc/README.md on launch_run.sh),
+        # and the auto-resume watchdog makes it a real risk: refuse instead.
+        saved = ckpt.get("params", {})
+        drifted = [
+            (key, saved.get(key, default), params[key])
+            for key, default in (
+                ("gap_weighting", False),
+                ("separate_heads", False),
+                ("diff_loss_weight", 0.0),
+                ("use_attention", False),
+                ("deeper_cnn", False),
+                ("dense_supervision", False),
+            )
+            if saved.get(key, default) != params[key]
+        ]
+        if drifted:
+            raise SystemExit(
+                "refusing to resume: these settings differ between the checkpoint and this "
+                "command line, so the resumed run would not be the run that wrote the "
+                "checkpoint: "
+                + "; ".join(f"{k}: checkpoint={c!r} command line={n!r}" for k, c, n in drifted)
+            )
         start_epoch = ckpt.get("epoch", 0)
         best_val_loss = ckpt.get("best_val_loss", float("inf"))
         best_epoch = ckpt.get("best_epoch", 0)
@@ -916,12 +1110,21 @@ def main() -> int:
 
     for epoch in range(start_epoch, params["epochs"]):
         epoch_start = time.time()
+        components: dict[str, float] = {}
         train_loss = train_one_epoch(
             model, train_loader, device, criterion, optimizer,
             ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"],
             dense_supervision=params.get("dense_supervision", False),
+            gap_weighting=params.get("gap_weighting", False),
+            diff_loss_weight=params.get("diff_loss_weight", 0.0),
+            loss_components=components,
         )
         print(f"Epoch {epoch + 1}, Train Loss: {train_loss:.4f}")
+        if components:
+            print(
+                f"Epoch {epoch + 1}, Train Side Loss: {components['side']:.4f}, "
+                f"Train Diff Loss: {components['diff']:.4f}"
+            )
         val_loss = validate(
             model, val_loader, device, criterion,
             ratings_mean=params["ratings_mean"], ratings_std=params["ratings_std"],
@@ -961,6 +1164,32 @@ def main() -> int:
     print("best val loss:", best_val_loss)
     print("best val epoch:", best_epoch)
     writer.close()
+
+    # Unambiguous completion marker for an unattended run. The auto-resume
+    # watchdog keys off the "Training duration (min):" line above; this file is
+    # the same signal in a form a later reader can test with one `test -f`,
+    # and it records which epoch to evaluate. Written to a temp file and
+    # renamed so a reader never sees a half-written marker.
+    marker = model_dir / "FINISHED"
+    tmp_marker = model_dir / "FINISHED.tmp"
+    with open(tmp_marker, "w") as f:
+        json.dump(
+            {
+                "experiment": experiment_name,
+                "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "epochs_completed": params["epochs"],
+                "best_val_loss": best_val_loss,
+                "best_epoch": best_epoch,
+                "best_checkpoint": str(model_dir / "best_model.pth"),
+                "training_minutes": (end - start) / 60,
+                "params": params,
+            },
+            f,
+            indent=2,
+            default=str,
+        )
+    os.replace(tmp_marker, marker)
+    print(f"Wrote completion marker {marker}")
     return 0
 
 

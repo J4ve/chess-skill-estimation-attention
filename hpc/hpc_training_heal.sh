@@ -46,6 +46,15 @@ RUNS=(
   "diag_fullcorpus_lowdropout:3:/tmp/ratingnet_store:0.3:--lr 3e-4 --use_attention --attention_type bahdanau --attention_dim 64"
   "fullcorpus_deepcnn_arm5:1:/tmp/ratingnet_store:0.5:--lr 3e-4 --use_attention --attention_type bahdanau --attention_dim 64 --deeper_cnn"
   "fullcorpus_baseline_lr3e4_arm6:1:/tmp/ratingnet_store:0.5:--lr 3e-4"
+  # White/Black separation retrain. Both arms are the adopted configuration
+  # plus one change each, on GPUs 2 and 3 because 0 and 1 carry other people's
+  # services. The flags here must stay byte-identical to the flags the arms
+  # were launched with: the trainer rebuilds the objective from the command
+  # line, not from the checkpoint, so a dropped flag here would otherwise
+  # resume as a different experiment under the same name. It no longer can,
+  # because the trainer refuses to resume on a settings mismatch.
+  "mirror_arm_a_gapweight:2:/tmp/ratingnet_store:0.5:--lr 3e-4 --use_attention --attention_type bahdanau --attention_dim 64 --gap_weighting"
+  "mirror_arm_b_diffhead:3:/tmp/ratingnet_store:0.5:--lr 3e-4 --use_attention --attention_type bahdanau --attention_dim 64 --separate_heads --diff_loss_weight 0.5"
 )
 
 store_restored_this_pass=0
