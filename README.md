@@ -96,6 +96,8 @@ The same view in dark theme, and the sample-game picker:
   only) and get the rating estimate and suspicion score after every move; see
   [docs/web-prototype.md](docs/web-prototype.md#play-mode).
 
+  ![Play mode, mid-game](docs/screenshots/play-mode.png)
+
 ## Quick start (web prototype, local machine)
 
 PyTorch needs Python 3.12 or 3.13. A venv outside the repo keeps its
