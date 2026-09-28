@@ -20,6 +20,18 @@ watcher that relaunches anything that dies.
   differs from the control in exactly one place.
 - `hpc_sweep_queue.sh`: the sweep's queue, carrying the 17 pre-registered
   cells and the one flag each of them varies.
+- `hpc_mirror_launch_run.sh <session> <gpu> <arm>`: start one arm of the
+  White/Black separation retrain, resuming from `models/<experiment>/latest.pth`
+  when that file exists. Arm `a` adds the rating-gap loss weighting and arm `b`
+  the per-side head and the rating-difference term; every other value is the
+  adopted configuration, fixed in the script. Its flag strings are the ones
+  `hpc_training_heal.sh` carries for the same two runs, and they have to stay
+  that way: the trainer builds the objective from the command line, so a resume
+  with a different flag set would be a different experiment under the same name.
+  It appends to the run's log rather than truncating it, because the watcher
+  reads the completion line out of that log. Set `EXPERIMENT`, `DATA_DIR` or
+  `EPOCHS` to smoke test an arm without touching the real run. The design and
+  the pass mark are in `analysis/mirror-retrain-preregistration.md`.
 - `hpc_training_heal.sh`: a cron driven watcher for the full corpus arms. A
   reboot once wiped the NVMe corpus store and killed three of four concurrent
   runs, which then sat idle for hours before anyone noticed. This script
