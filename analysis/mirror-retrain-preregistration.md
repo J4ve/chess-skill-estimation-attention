@@ -295,3 +295,121 @@ existing ones.
 Report the numbers plainly, including a failure. A failed arm is a real result:
 it says the mirroring is not cheap to remove, which is worth more to the
 manuscript than silence.
+
+## Launch record (appended 2026-09-28, after the pre-registration above was fixed)
+
+Both arms were launched on **2026-09-28 at 14:24 Philippine time** with
+`hpc_mirror_launch_run.sh`, after this note was committed and pushed.
+
+| | Arm A | Arm B |
+| --- | --- | --- |
+| experiment | `mirror_arm_a_gapweight` | `mirror_arm_b_diffhead` |
+| GPU | 2 | 3 |
+| tmux session | `mirror_a` | `mirror_b` |
+| log | `logs/mirror_arm_a_gapweight.log` | `logs/mirror_arm_b_diffhead.log` |
+| checkpoints | `models/mirror_arm_a_gapweight/` | `models/mirror_arm_b_diffhead/` |
+| marker when done | `models/mirror_arm_a_gapweight/FINISHED` | `models/mirror_arm_b_diffhead/FINISHED` |
+| epoch 1 finished | 15:34:08 | 15:34:44 |
+| epoch 1 train loss | 247.6220 (gap-weighted) | 278.9886 = side 233.2013 + 0.5 x diff 91.5746 |
+| epoch 1 validation | 214.4821 | 209.8182 |
+| **expected finish** | **about 2026-10-01 midday** | **about 2026-10-01 midday** |
+
+The first epoch took about **70 minutes** on both arms, so 60 epochs is roughly
+**70 hours**, finishing around midday on **2026-10-01**, about 30 hours inside
+the 2026-10-02 evening cutoff. Epoch 1 carries the startup cost of opening the
+store and verifying the 81 MB manifest, so later epochs should be no slower.
+Validation loss is the plain unweighted per-side MAE in both arms, so the two
+columns are directly comparable with each other and with the 172.38 the served
+arm reached; neither is near converged after one epoch.
+
+GPUs 0 and 1 were left alone: they carry another group's inference service and a
+second user's translation prototype. Both were idle at 0 percent, but neither is
+mine to use. GPUs 2 and 3 held only the shared root-owned `milvus` process
+(1.2 GiB, 0 percent).
+
+Both runs **loaded**, rather than regenerated, the committed split manifest:
+`manifest_sha256=dee7d11779df12bfc1242445079f9903b1c48b0787103db63f7b410bd9ed2b3b`,
+train 1,836,000 / val 459,000 / test 255,000, all 2,550,000 games.
+
+The resolved settings in each log confirm the arms differ in exactly the intended
+place. Arm A: `gap_weighting=True, separate_heads=False, diff_loss_weight=0.0`.
+Arm B: `gap_weighting=False, separate_heads=True, diff_loss_weight=0.5`.
+Everything else is identical: lr 3e-4, batch 32, val batch 512, weight decay
+1e-5, patience 5, dropout 0.5, Bahdanau attention dim 64, seed 0, split seed 42,
+60 epochs. Each arm's epoch-1 checkpoint carries those settings in its `params`
+block, and Arm B's holds the four per-side head tensors
+(`fc1_white`, `fc1_black`, `fc2_white`, `fc2_black`) that the scorer rebuilds
+from `separate_heads`.
+
+### Checks made before launch
+
+- **The unflagged path is unchanged.** The served checkpoint
+  `models/preflight_check_2m/best_model.pth`, rescored through the new trainer
+  and the patched scorer, gives overall test MAE **171.9167760980367**: the same
+  figure to every digit as the one already recorded in
+  `side-mirroring-results.md`.
+- **Unit tests.** 22 tests over the new loss terms and the new head pass in the
+  `ratingnet2` environment, including an autograd check that lambda = 0.5 gives
+  the two objectives equal per-output gradient, and checks that a default
+  checkpoint still loads `strict=True` into a default model while a separate-head
+  checkpoint refuses to.
+- **Smoke tests.** Both arms trained end to end on a 3,000-game subset (logs kept
+  at `logs/fm_mirror_smoke/`). Total and per-side training loss fell for both.
+  Arm B's difference term **rose** across 15 epochs on that subset, 77.0 to
+  102.3, while its side term fell, 299.4 to 191.1: on 2,160 training games the
+  optimizer buys more by sharpening the rating level than by tracking the gap.
+  That is a property of the subset rather than a verdict on the arm, and neither
+  lambda nor the weighting was changed in response, as pre-registered. It is on
+  the record here because it is a genuine early hint that Arm B may fail
+  criterion (c).
+- **Resume safety.** Resuming with the correct flags works. Resuming with
+  `--gap_weighting` dropped is refused with a message naming the setting. Feeding
+  an Arm B checkpoint to an Arm A command line fails on the head layout.
+
+### Watchdog, verified after epoch 1
+
+`crontab -l` still carries
+`*/10 * * * * /bin/bash ~/thesis2/hpc_training_heal.sh`.
+
+A dry-run copy of the watchdog (its own lock and log, the launch replaced by an
+echo) was run twice against the live runs. With both arms up it reports
+`SKIP mirror_arm_a_gapweight: already running` and the same for Arm B, and treats
+all six earlier arms as finished. Forced to treat every run as dead, it prints
+the relaunch it would issue:
+
+```
+python src/chess_rating_net.py --train --data_dir /tmp/ratingnet_store \
+  --experiment mirror_arm_a_gapweight --epochs 60 --batch_size 32 \
+  --val_batch_size 512 --num_workers 8 --weight_decay 1e-5 --patience 5 \
+  --dropout_rate 0.5 --split_seed 42 --lr 3e-4 --use_attention \
+  --attention_type bahdanau --attention_dim 64 --gap_weighting \
+  --resume models/mirror_arm_a_gapweight/latest.pth
+
+python src/chess_rating_net.py --train --data_dir /tmp/ratingnet_store \
+  --experiment mirror_arm_b_diffhead --epochs 60 --batch_size 32 \
+  --val_batch_size 512 --num_workers 8 --weight_decay 1e-5 --patience 5 \
+  --dropout_rate 0.5 --split_seed 42 --lr 3e-4 --use_attention \
+  --attention_type bahdanau --attention_dim 64 --separate_heads \
+  --diff_loss_weight 0.5 --resume models/mirror_arm_b_diffhead/latest.pth
+```
+
+Both carry the new flags. The live command lines were also compared against
+`/proc/<pid>/cmdline` and match those flag strings exactly, so a healed relaunch
+continues the same experiment rather than a different one. The real watchdog log
+was untouched by the dry run.
+
+### Known risks over the next three days
+
+- The machine is shared and the watchdog pins each arm to a fixed GPU. If another
+  user takes GPU 2 or 3, a healed relaunch will contend for it rather than move.
+  An A5000 has 24 GiB and an arm uses about 2 GiB, so contention would slow a run
+  rather than kill it.
+- `/home` is 99 percent full with about 75 GiB free. The two runs need about 1.2
+  GiB of checkpoints between them.
+- Training is CPU bound on data loading, not GPU bound: the GPUs sit near 30
+  percent while the store is fully in page cache and IO wait is zero. Nothing was
+  retuned for speed, because changing a running experiment to save hours is worse
+  than finishing a day later.
+- If an arm passes and is ever served, `src/api.py` builds the model without
+  `separate_heads`, so that flag would have to be threaded through first. Nothing
+  from this experiment is served as it stands.
