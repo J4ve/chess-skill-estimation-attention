@@ -443,3 +443,27 @@ models/<exp>/latest.pth` and no refusal.
 
 The lesson is recorded in the prototype repository's `hpc/README.md` and
 `AGENTS.md` so a later launch does not reintroduce it.
+
+### The evaluation sequence was rehearsed end to end before pausing
+
+The sequence above was run once on 2026-09-28, while the arms were still
+training, so the worker who scores the finished runs is not meeting any of it for
+the first time under a deadline.
+
+- `score_test_split.py` rebuilt Arm B's **separate-head** architecture from
+  `ckpt["params"]["separate_heads"]` and loaded it with `strict=True`, over all
+  255,000 test games against the expected manifest. This is the step that would
+  have failed had the scorer not been taught the new flag.
+- `side_mirroring_check.py` then ran over that dump and printed every field the
+  pass mark names, including the new `signed_gap_pearson_r`.
+- On the same pass the served arm reproduced its published numbers exactly:
+  overall MAE 171.9167760980392, `pred_gap_median` 0.7126, `pred_gap_max` 4.4336,
+  `mae_gap_ge_300` 276.7769, `signed_gap_pearson_r` 0.00092.
+
+The rehearsal wrote to `/tmp/fm_eval_rehearsal/` only, never to
+`analysis/heldout_test_eval/`, because `run_heldout_test_eval.sh` skips any label
+whose JSON already exists there and a stray file would have made the real
+evaluation silently skip the finished checkpoint. A `README.txt` in that scratch
+directory says the same. Its Arm B numbers come from an epoch-1 checkpoint, one
+epoch of sixty, and are **not** a result: they exist only to prove the pipeline
+runs.
