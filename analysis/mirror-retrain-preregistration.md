@@ -413,3 +413,33 @@ was untouched by the dry run.
 - If an arm passes and is ever served, `src/api.py` builds the model without
   `separate_heads`, so that flag would have to be threaded through first. Nothing
   from this experiment is served as it stands.
+
+### Relaunched 15:42 to fix a watchdog blind spot
+
+Both arms were stopped and relaunched at **15:42** on the same day, resuming from
+their epoch-1 checkpoints. About twelve minutes of epoch 2 were discarded; the
+expected finish moves to roughly **13:00 on 2026-10-01**, still well inside the
+cutoff.
+
+The reason: when `tmux new -d -s <sess> "<cmd>"` has to fork the tmux server
+itself, the server keeps `<cmd>` in its own argv. Arm A was the first session, so
+the server's command line contained `--experiment mirror_arm_a_gapweight`, which
+is exactly the string the watchdog greps for to decide whether a run is alive.
+Read at 14:26 and again at 14:57, the server's `/proc/<pid>/cmdline` still showed
+that full command. Had Arm A's python died, the watchdog would have matched the
+tmux server, logged the run as already running, and never resumed it. `exec bash`
+keeps the session, and so the server, alive indefinitely, so nothing short of a
+reboot would have cleared it. The dry run did not catch this: forcing a relaunch
+bypasses the `pgrep` check, and "already running" looks the same whether it is
+the trainer or the server that matched.
+
+The fix needed no change to the watchdog. The tmux server is now created from a
+neutral session, `tmux new -d -s fm_holder`, whose argv names no experiment, and
+both arms were started into that existing server. Verified afterwards: the server
+pid is matched by neither arm's watchdog pattern (`server matched? 0` for both),
+and each pattern now matches only the wrapper shell, the trainer and its data
+workers, all of which die with the run. Both logs show `Resuming from
+models/<exp>/latest.pth` and no refusal.
+
+The lesson is recorded in the prototype repository's `hpc/README.md` and
+`AGENTS.md` so a later launch does not reintroduce it.

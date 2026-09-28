@@ -41,6 +41,28 @@ watcher that relaunches anything that dies.
   learning rate reduction rather than early stopping and no run ever exits its
   loop early.
 
+## Start the tmux server from a neutral session first
+
+`hpc_training_heal.sh` decides whether a run is alive with
+`pgrep -f -- "--experiment <name>"`. When `tmux new -d -s <sess> "<cmd>"` has to
+fork the tmux server itself, the server keeps `<cmd>` in its own argv, so that
+pattern can match the server rather than the training process, and the watcher
+then leaves a dead run alone because it believes the run is still going. Create
+the server from a session that names no experiment before launching anything:
+
+```
+tmux new -d -s fm_holder
+```
+
+Then check that the server is not what the pattern matches:
+
+```
+pgrep -f -- "--experiment <name>" | grep -cx "$(tmux display-message -p '#{pid}')"   # expect 0
+```
+
+Experiment names also must not be prefixes of one another, since the match is a
+substring match.
+
 ## Before running any of these
 
 They carry placeholder values that have to be filled in first. `~/thesis2` is
