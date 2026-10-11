@@ -24,6 +24,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
+from move_explanation_merge import parse_time_control, compute_time_spent
+
 BLUE = "#2a78d6"    # White
 ORANGE = "#eb6834"  # Black
 GRAY = "#8a8a86"
@@ -75,11 +77,18 @@ def build_case_json(gid, c, e):
     n = min(c["n_plies"], e["n_plies"])
     sw, sb = c["served"]["live_white"][:n], c["served"]["live_black"][:n]
     attn = (c["served"].get("offline_attention") or [None] * n)[:n]
+    clocks = c["clocks_seconds"][:n]
+    base, inc = parse_time_control(c.get("time_control"))
+    time_spent = compute_time_spent(clocks, base, inc)
     rows = []
     for i in range(n):
+        ply = i + 1
+        ts = time_spent[i] if ply > 2 else None
+        if ts is not None and ts < 0:
+            ts = 0.0
         rows.append(
             dict(
-                ply=i + 1,
+                ply=ply,
                 mover=e["mover"][i],
                 san=e["san"][i],
                 live_white=sw[i],
@@ -89,6 +98,8 @@ def build_case_json(gid, c, e):
                 cp_loss=e["cp_loss"][i],
                 phase=e["phase"][i],
                 attention_weight=attn[i],
+                clock_seconds=clocks[i] if i < len(clocks) else None,
+                time_spent_seconds=ts,
             )
         )
     return {
@@ -101,9 +112,13 @@ def build_case_json(gid, c, e):
             "The model never sees a chess engine. 'eval_*_white_pov' is Stockfish "
             "16 (depth 17, 1.0s cap), shown only as an external yardstick to "
             "interpret the model's live (prefix-only) rating estimate. "
-            "'live_white'/'live_black' are the prefix-recompute estimate -- "
-            "what the prototype shows as the game is streamed -- not the "
-            "offline bidirectional per-ply output."
+            "'live_white'/'live_black' are the prefix-recompute estimate: "
+            "what the prototype shows as the game is streamed, not the "
+            "offline bidirectional per-ply output. 'clock_seconds' is the "
+            "model's own clock-remaining input; 'time_spent_seconds' is "
+            "derived from it and is null for each side's first move (ply 1 "
+            "and ply 2), where it would otherwise fall back to the "
+            "TimeControl base allotment, which berserk can make meaningless."
         ),
         "per_ply": rows,
     }
@@ -179,7 +194,7 @@ def make_figure(gid, case, out_path, title_label):
     ax2.set_ylabel("Eval (cp, White POV)")
     ax2.set_ylim(-EVAL_CLIP_CP * 1.05, EVAL_CLIP_CP * 1.05)
     ax2.set_title(
-        f"Stockfish 16 evaluation (depth 17, clipped at +/-{EVAL_CLIP_CP}cp) -- "
+        f"Stockfish 16 evaluation (depth 17, clipped at +/-{EVAL_CLIP_CP}cp): "
         "an external yardstick; the model never sees this",
         fontsize=9.5, loc="left",
     )
@@ -225,7 +240,7 @@ def main():
             gid,
             case,
             f"move-explanation-{out_prefix}.png",
-            f"{label}: {gid} (White {case['white_elo']}, Black {case['black_elo']})",
+            f"{label}: {gid} (White {case['white_elo']:.0f}, Black {case['black_elo']:.0f})",
         )
 
     with open("case_study_selection.json", "w") as f:

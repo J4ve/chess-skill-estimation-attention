@@ -157,25 +157,69 @@ def main():
         for response in ["own", "opp", "mean", "own_minus_opp"]:
             y_col = f"delta_{response}_{resp_prefix}"
 
-            m0_nuisance = cluster_bootstrap_ols(df_scored, y_col, nuisance_design(False))
-            m1 = cluster_bootstrap_ols(df_scored, y_col, lambda d: build_design(d, include_time=False))
-            m2 = cluster_bootstrap_ols(df_timed, y_col, lambda d: build_design(d, include_time=True))
+            # Sequence A, on the full scored sample (no time requirement):
+            # how much does move quality add over the ply/TC/mover baseline.
+            m0_scored = cluster_bootstrap_ols(df_scored, y_col, nuisance_design(False))
+            m1_scored = cluster_bootstrap_ols(df_scored, y_col, lambda d: build_design(d, include_time=False))
+
+            # Sequence B, on the SAME rows (df_timed) for all three nested
+            # models: this is the only valid way to compare move quality's
+            # and time's marginal R^2, since R^2 is not comparable across
+            # models fit on different row sets. df_timed drops exactly one
+            # row per game (ply 2; see time_spent note in the merge script).
+            m0_timed = cluster_bootstrap_ols(df_timed, y_col, nuisance_design(False))
+            m1_timed = cluster_bootstrap_ols(df_timed, y_col, lambda d: build_design(d, include_time=False))
+            m2_timed = cluster_bootstrap_ols(df_timed, y_col, lambda d: build_design(d, include_time=True))
 
             arm_results[response] = {
                 "y_col": y_col,
-                "nuisance_only": m0_nuisance,
-                "plus_move_quality": m1,
-                "plus_move_quality_and_time": m2,
-                "delta_r2_move_quality": m1["r2"]["point"] - m0_nuisance["r2"]["point"],
+                "scored_sample": {
+                    "nuisance_only": m0_scored,
+                    "plus_move_quality": m1_scored,
+                    "delta_r2_move_quality": m1_scored["r2"]["point"] - m0_scored["r2"]["point"],
+                },
+                "timed_sample_nested": {
+                    "nuisance_only": m0_timed,
+                    "plus_move_quality": m1_timed,
+                    "plus_move_quality_and_time": m2_timed,
+                    "delta_r2_move_quality": m1_timed["r2"]["point"] - m0_timed["r2"]["point"],
+                    "delta_r2_time": m2_timed["r2"]["point"] - m1_timed["r2"]["point"],
+                },
             }
             print(
-                f"[{arm}] {response}: R2 nuisance={m0_nuisance['r2']['point']:.5f} "
-                f"+move_quality={m1['r2']['point']:.5f} "
-                f"(delta={arm_results[response]['delta_r2_move_quality']:.5f}) "
-                f"+time={m2['r2']['point']:.5f}",
+                f"[{arm}] {response}: scored R2 nuisance={m0_scored['r2']['point']:.5f} "
+                f"+quality={m1_scored['r2']['point']:.5f} | "
+                f"timed R2 nuisance={m0_timed['r2']['point']:.5f} "
+                f"+quality={m1_timed['r2']['point']:.5f} "
+                f"+time={m2_timed['r2']['point']:.5f} "
+                f"(dR2_quality={arm_results[response]['timed_sample_nested']['delta_r2_move_quality']:.5f}, "
+                f"dR2_time={arm_results[response]['timed_sample_nested']['delta_r2_time']:.5f})",
                 flush=True,
             )
         results["by_arm"][arm] = arm_results
+
+    # Robustness: same nested sequence (scored sample), restricted to
+    # ply >= 11 (the project's own critical_moves.DEFAULT_MIN_PLY cutoff,
+    # i.e. ply > 10 one-indexed), since opening swings of hundreds of
+    # points may dominate SS_tot and keep every R^2 tiny regardless of what
+    # is added.
+    df_scored_minply = df_scored[df_scored["ply"] > 10].copy()
+    minply_results = {}
+    for arm, resp_prefix in [("served", "served"), ("mirror_arm_a_gapweight", "mirror")]:
+        arm_minply = {}
+        for response in ["own", "opp", "mean", "own_minus_opp"]:
+            y_col = f"delta_{response}_{resp_prefix}"
+            m0 = cluster_bootstrap_ols(df_scored_minply, y_col, nuisance_design(False), n_resamples=500)
+            m1 = cluster_bootstrap_ols(
+                df_scored_minply, y_col, lambda d: build_design(d, include_time=False), n_resamples=500
+            )
+            arm_minply[response] = {
+                "nuisance_only": m0,
+                "plus_move_quality": m1,
+                "delta_r2_move_quality": m1["r2"]["point"] - m0["r2"]["point"],
+            }
+        minply_results[arm] = arm_minply
+    results["ply_gt_10_only"] = {"n_rows": int(len(df_scored_minply)), "by_arm": minply_results}
 
     with open("regression_results.json", "w") as f:
         json.dump(results, f, indent=2)

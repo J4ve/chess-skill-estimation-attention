@@ -4,7 +4,7 @@
   "white_elo": 2246.0,
   "black_elo": 2267.0,
   "time_control": "180+2",
-  "note": "The model never sees a chess engine. 'eval_*_white_pov' is Stockfish 16 (depth 17, 1.0s cap), shown only as an external yardstick to interpret the model's live (prefix-only) rating estimate. 'live_white'/'live_black' are the prefix-recompute estimate -- what the prototype shows as the game is streamed -- not the offline bidirectional per-ply output.",
+  "note": "The model never sees a chess engine. 'eval_*_white_pov' is Stockfish 16 (depth 17, 1.0s cap), shown only as an external yardstick to interpret the model's live (prefix-only) rating estimate. 'live_white'/'live_black' are the prefix-recompute estimate: what the prototype shows as the game is streamed, not the offline bidirectional per-ply output. 'clock_seconds' is the model's own clock-remaining input; 'time_spent_seconds' is derived from it and is null for each side's first move (ply 1 and ply 2), where it would otherwise fall back to the TimeControl base allotment, which berserk can make meaningless.",
   "per_ply": [
     {
       "ply": 1,
@@ -16,7 +16,9 @@
       "eval_after_white_pov": 41.0,
       "cp_loss": 0.0,
       "phase": "opening",
-      "attention_weight": 0.156358
+      "attention_weight": 0.156358,
+      "clock_seconds": 180,
+      "time_spent_seconds": null
     },
     {
       "ply": 2,
@@ -28,7 +30,9 @@
       "eval_after_white_pov": 43.0,
       "cp_loss": 2.0,
       "phase": "opening",
-      "attention_weight": 0.037814
+      "attention_weight": 0.037814,
+      "clock_seconds": 180,
+      "time_spent_seconds": null
     },
     {
       "ply": 3,
@@ -40,7 +44,9 @@
       "eval_after_white_pov": 29.0,
       "cp_loss": 14.0,
       "phase": "opening",
-      "attention_weight": 0.014245
+      "attention_weight": 0.014245,
+      "clock_seconds": 178,
+      "time_spent_seconds": 4
     },
     {
       "ply": 4,
@@ -52,7 +58,9 @@
       "eval_after_white_pov": 90.0,
       "cp_loss": 61.0,
       "phase": "opening",
-      "attention_weight": 0.008462
+      "attention_weight": 0.008462,
+      "clock_seconds": 180,
+      "time_spent_seconds": 2
     },
     {
       "ply": 5,
@@ -64,7 +72,9 @@
       "eval_after_white_pov": 33.0,
       "cp_loss": 57.0,
       "phase": "opening",
-      "attention_weight": 0.037199
+      "attention_weight": 0.037199,
+      "clock_seconds": 177,
+      "time_spent_seconds": 3
     },
     {
       "ply": 6,
@@ -76,7 +86,9 @@
       "eval_after_white_pov": 23.0,
       "cp_loss": 0.0,
       "phase": "opening",
-      "attention_weight": 0.010265
+      "attention_weight": 0.010265,
+      "clock_seconds": 180,
+      "time_spent_seconds": 2
     },
     {
       "ply": 7,
@@ -88,7 +100,9 @@
       "eval_after_white_pov": 14.0,
       "cp_loss": 9.0,
       "phase": "opening",
-      "attention_weight": 0.00308
+      "attention_weight": 0.00308,
+      "clock_seconds": 169,
+      "time_spent_seconds": 10
     },
     {
       "ply": 8,
@@ -100,7 +114,9 @@
       "eval_after_white_pov": 49.0,
       "cp_loss": 35.0,
       "phase": "opening",
-      "attention_weight": 0.00198
+      "attention_weight": 0.00198,
+      "clock_seconds": 177,
+      "time_spent_seconds": 5
     },
     {
       "ply": 9,
@@ -112,7 +128,9 @@
       "eval_after_white_pov": 50.0,
       "cp_loss": 0.0,
       "phase": "opening",
-      "attention_weight": 0.02808
+      "attention_weight": 0.02808,
+      "clock_seconds": 163,
+      "time_spent_seconds": 8
     },
     {
       "ply": 10,
@@ -124,7 +142,9 @@
       "eval_after_white_pov": 58.0,
       "cp_loss": 8.0,
       "phase": "opening",
-      "attention_weight": 0.002063
+      "attention_weight": 0.002063,
+      "clock_seconds": 178,
+      "time_spent_seconds": 1
     },
     {
       "ply": 11,
@@ -136,7 +156,9 @@
       "eval_after_white_pov": 47.0,
       "cp_loss": 11.0,
       "phase": "middlegame",
-      "attention_weight": 0.002053
+      "attention_weight": 0.002053,
+      "clock_seconds": 163,
+      "time_spent_seconds": 2
     },
     {
       "ply": 12,
@@ -148,7 +170,9 @@
       "eval_after_white_pov": 74.0,
       "cp_loss": 27.0,
       "phase": "middlegame",
-      "attention_weight": 0.014859
+      "attention_weight": 0.014859,
+      "clock_seconds": 176,
+      "time_spent_seconds": 4
     },
     {
       "ply": 13,
@@ -160,7 +184,9 @@
       "eval_after_white_pov": 70.0,
       "cp_loss": 4.0,
       "phase": "middlegame",
-      "attention_weight": 0.00475
+      "attention_weight": 0.00475,
+      "clock_seconds": 164,
+      "time_spent_seconds": 1
     },
     {
       "ply": 14,
@@ -172,7 +198,9 @@
       "eval_after_white_pov": 142.0,
       "cp_loss": 72.0,
       "phase": "middlegame",
-      "attention_weight": 0.002624
+      "attention_weight": 0.002624,
+      "clock_seconds": 175,
+      "time_spent_seconds": 3
     },
     {
       "ply": 15,
@@ -184,7 +212,9 @@
       "eval_after_white_pov": 89.0,
       "cp_loss": 53.0,
       "phase": "middlegame",
-      "attention_weight": 0.014419
+      "attention_weight": 0.014419,
+      "clock_seconds": 161,
+      "time_spent_seconds": 5
     },
     {
       "ply": 16,
@@ -196,7 +226,9 @@
       "eval_after_white_pov": 107.0,
       "cp_loss": 18.0,
       "phase": "middlegame",
-      "attention_weight": 0.004815
+      "attention_weight": 0.004815,
+      "clock_seconds": 175,
+      "time_spent_seconds": 2
     },
     {
       "ply": 17,
@@ -208,7 +240,9 @@
       "eval_after_white_pov": 90.0,
       "cp_loss": 17.0,
       "phase": "middlegame",
-      "attention_weight": 0.007168
+      "attention_weight": 0.007168,
+      "clock_seconds": 162,
+      "time_spent_seconds": 1
     },
     {
       "ply": 18,
@@ -220,7 +254,9 @@
       "eval_after_white_pov": 118.0,
       "cp_loss": 28.0,
       "phase": "middlegame",
-      "attention_weight": 0.010735
+      "attention_weight": 0.010735,
+      "clock_seconds": 175,
+      "time_spent_seconds": 2
     },
     {
       "ply": 19,
@@ -232,7 +268,9 @@
       "eval_after_white_pov": 59.0,
       "cp_loss": 59.0,
       "phase": "middlegame",
-      "attention_weight": 0.010705
+      "attention_weight": 0.010705,
+      "clock_seconds": 162,
+      "time_spent_seconds": 2
     },
     {
       "ply": 20,
@@ -244,7 +282,9 @@
       "eval_after_white_pov": 73.0,
       "cp_loss": 14.0,
       "phase": "middlegame",
-      "attention_weight": 0.036584
+      "attention_weight": 0.036584,
+      "clock_seconds": 173,
+      "time_spent_seconds": 4
     },
     {
       "ply": 21,
@@ -256,7 +296,9 @@
       "eval_after_white_pov": 74.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.066118
+      "attention_weight": 0.066118,
+      "clock_seconds": 162,
+      "time_spent_seconds": 2
     },
     {
       "ply": 22,
@@ -268,7 +310,9 @@
       "eval_after_white_pov": 93.0,
       "cp_loss": 19.0,
       "phase": "middlegame",
-      "attention_weight": 0.012964
+      "attention_weight": 0.012964,
+      "clock_seconds": 173,
+      "time_spent_seconds": 2
     },
     {
       "ply": 23,
@@ -280,7 +324,9 @@
       "eval_after_white_pov": 96.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.021033
+      "attention_weight": 0.021033,
+      "clock_seconds": 154,
+      "time_spent_seconds": 10
     },
     {
       "ply": 24,
@@ -292,7 +338,9 @@
       "eval_after_white_pov": 101.0,
       "cp_loss": 5.0,
       "phase": "middlegame",
-      "attention_weight": 0.026053
+      "attention_weight": 0.026053,
+      "clock_seconds": 167,
+      "time_spent_seconds": 8
     },
     {
       "ply": 25,
@@ -304,7 +352,9 @@
       "eval_after_white_pov": 45.0,
       "cp_loss": 56.0,
       "phase": "middlegame",
-      "attention_weight": 0.017762
+      "attention_weight": 0.017762,
+      "clock_seconds": 153,
+      "time_spent_seconds": 3
     },
     {
       "ply": 26,
@@ -316,7 +366,9 @@
       "eval_after_white_pov": 126.0,
       "cp_loss": 81.0,
       "phase": "middlegame",
-      "attention_weight": 0.01297
+      "attention_weight": 0.01297,
+      "clock_seconds": 163,
+      "time_spent_seconds": 6
     },
     {
       "ply": 27,
@@ -328,7 +380,9 @@
       "eval_after_white_pov": -63.0,
       "cp_loss": 189.0,
       "phase": "middlegame",
-      "attention_weight": 0.091922
+      "attention_weight": 0.091922,
+      "clock_seconds": 147,
+      "time_spent_seconds": 8
     },
     {
       "ply": 28,
@@ -340,7 +394,9 @@
       "eval_after_white_pov": 120.0,
       "cp_loss": 183.0,
       "phase": "middlegame",
-      "attention_weight": 0.170095
+      "attention_weight": 0.170095,
+      "clock_seconds": 164,
+      "time_spent_seconds": 1
     },
     {
       "ply": 29,
@@ -352,7 +408,9 @@
       "eval_after_white_pov": 2.0,
       "cp_loss": 118.0,
       "phase": "middlegame",
-      "attention_weight": 0.042429
+      "attention_weight": 0.042429,
+      "clock_seconds": 142,
+      "time_spent_seconds": 7
     },
     {
       "ply": 30,
@@ -364,7 +422,9 @@
       "eval_after_white_pov": 110.0,
       "cp_loss": 108.0,
       "phase": "middlegame",
-      "attention_weight": 0.029527
+      "attention_weight": 0.029527,
+      "clock_seconds": 151,
+      "time_spent_seconds": 15
     },
     {
       "ply": 31,
@@ -376,7 +436,9 @@
       "eval_after_white_pov": 100.0,
       "cp_loss": 10.0,
       "phase": "middlegame",
-      "attention_weight": 0.055002
+      "attention_weight": 0.055002,
+      "clock_seconds": 130,
+      "time_spent_seconds": 14
     },
     {
       "ply": 32,
@@ -388,7 +450,9 @@
       "eval_after_white_pov": 120.0,
       "cp_loss": 20.0,
       "phase": "middlegame",
-      "attention_weight": 0.000896
+      "attention_weight": 0.000896,
+      "clock_seconds": 146,
+      "time_spent_seconds": 7
     },
     {
       "ply": 33,
@@ -400,7 +464,9 @@
       "eval_after_white_pov": 122.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.006766
+      "attention_weight": 0.006766,
+      "clock_seconds": 90,
+      "time_spent_seconds": 42
     },
     {
       "ply": 34,
@@ -412,7 +478,9 @@
       "eval_after_white_pov": 106.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.002063
+      "attention_weight": 0.002063,
+      "clock_seconds": 143,
+      "time_spent_seconds": 5
     },
     {
       "ply": 35,
@@ -424,7 +492,9 @@
       "eval_after_white_pov": 56.0,
       "cp_loss": 50.0,
       "phase": "middlegame",
-      "attention_weight": 0.000683
+      "attention_weight": 0.000683,
+      "clock_seconds": 90,
+      "time_spent_seconds": 2
     },
     {
       "ply": 36,
@@ -436,7 +506,9 @@
       "eval_after_white_pov": 65.0,
       "cp_loss": 9.0,
       "phase": "middlegame",
-      "attention_weight": 0.000384
+      "attention_weight": 0.000384,
+      "clock_seconds": 142,
+      "time_spent_seconds": 3
     },
     {
       "ply": 37,
@@ -448,7 +520,9 @@
       "eval_after_white_pov": -10.0,
       "cp_loss": 75.0,
       "phase": "middlegame",
-      "attention_weight": 0.001326
+      "attention_weight": 0.001326,
+      "clock_seconds": 90,
+      "time_spent_seconds": 2
     },
     {
       "ply": 38,
@@ -460,7 +534,9 @@
       "eval_after_white_pov": -15.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.002053
+      "attention_weight": 0.002053,
+      "clock_seconds": 143,
+      "time_spent_seconds": 1
     },
     {
       "ply": 39,
@@ -472,7 +548,9 @@
       "eval_after_white_pov": -131.0,
       "cp_loss": 116.0,
       "phase": "middlegame",
-      "attention_weight": 0.003479
+      "attention_weight": 0.003479,
+      "clock_seconds": 88,
+      "time_spent_seconds": 4
     },
     {
       "ply": 40,
@@ -484,7 +562,9 @@
       "eval_after_white_pov": -114.0,
       "cp_loss": 17.0,
       "phase": "middlegame",
-      "attention_weight": 0.001548
+      "attention_weight": 0.001548,
+      "clock_seconds": 139,
+      "time_spent_seconds": 6
     },
     {
       "ply": 41,
@@ -496,7 +576,9 @@
       "eval_after_white_pov": -183.0,
       "cp_loss": 69.0,
       "phase": "middlegame",
-      "attention_weight": 0.003486
+      "attention_weight": 0.003486,
+      "clock_seconds": 79,
+      "time_spent_seconds": 11
     },
     {
       "ply": 42,
@@ -508,7 +590,9 @@
       "eval_after_white_pov": -82.0,
       "cp_loss": 101.0,
       "phase": "middlegame",
-      "attention_weight": 0.003807
+      "attention_weight": 0.003807,
+      "clock_seconds": 136,
+      "time_spent_seconds": 5
     },
     {
       "ply": 43,
@@ -520,7 +604,9 @@
       "eval_after_white_pov": -235.0,
       "cp_loss": 153.0,
       "phase": "middlegame",
-      "attention_weight": 0.001205
+      "attention_weight": 0.001205,
+      "clock_seconds": 65,
+      "time_spent_seconds": 16
     },
     {
       "ply": 44,
@@ -532,7 +618,9 @@
       "eval_after_white_pov": 254.0,
       "cp_loss": 489.0,
       "phase": "middlegame",
-      "attention_weight": 0.000239
+      "attention_weight": 0.000239,
+      "clock_seconds": 132,
+      "time_spent_seconds": 6
     },
     {
       "ply": 45,
@@ -544,7 +632,9 @@
       "eval_after_white_pov": 262.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.000969
+      "attention_weight": 0.000969,
+      "clock_seconds": 64,
+      "time_spent_seconds": 3
     },
     {
       "ply": 46,
@@ -556,7 +646,9 @@
       "eval_after_white_pov": 285.0,
       "cp_loss": 23.0,
       "phase": "middlegame",
-      "attention_weight": 0.001311
+      "attention_weight": 0.001311,
+      "clock_seconds": 132,
+      "time_spent_seconds": 2
     },
     {
       "ply": 47,
@@ -568,7 +660,9 @@
       "eval_after_white_pov": 274.0,
       "cp_loss": 11.0,
       "phase": "middlegame",
-      "attention_weight": 0.000374
+      "attention_weight": 0.000374,
+      "clock_seconds": 63,
+      "time_spent_seconds": 3
     },
     {
       "ply": 48,
@@ -580,7 +674,9 @@
       "eval_after_white_pov": 349.0,
       "cp_loss": 75.0,
       "phase": "middlegame",
-      "attention_weight": 0.000297
+      "attention_weight": 0.000297,
+      "clock_seconds": 123,
+      "time_spent_seconds": 11
     },
     {
       "ply": 49,
@@ -592,7 +688,9 @@
       "eval_after_white_pov": 367.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.000908
+      "attention_weight": 0.000908,
+      "clock_seconds": 61,
+      "time_spent_seconds": 4
     },
     {
       "ply": 50,
@@ -604,7 +702,9 @@
       "eval_after_white_pov": 537.0,
       "cp_loss": 170.0,
       "phase": "middlegame",
-      "attention_weight": 0.000366
+      "attention_weight": 0.000366,
+      "clock_seconds": 119,
+      "time_spent_seconds": 6
     },
     {
       "ply": 51,
@@ -616,7 +716,9 @@
       "eval_after_white_pov": 543.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.000623
+      "attention_weight": 0.000623,
+      "clock_seconds": 61,
+      "time_spent_seconds": 2
     },
     {
       "ply": 52,
@@ -628,7 +730,9 @@
       "eval_after_white_pov": 565.0,
       "cp_loss": 22.0,
       "phase": "middlegame",
-      "attention_weight": 0.001588
+      "attention_weight": 0.001588,
+      "clock_seconds": 120,
+      "time_spent_seconds": 1
     },
     {
       "ply": 53,
@@ -640,7 +744,9 @@
       "eval_after_white_pov": 533.0,
       "cp_loss": 32.0,
       "phase": "middlegame",
-      "attention_weight": 0.001328
+      "attention_weight": 0.001328,
+      "clock_seconds": 59,
+      "time_spent_seconds": 4
     },
     {
       "ply": 54,
@@ -652,7 +758,9 @@
       "eval_after_white_pov": 548.0,
       "cp_loss": 15.0,
       "phase": "middlegame",
-      "attention_weight": 0.002023
+      "attention_weight": 0.002023,
+      "clock_seconds": 118,
+      "time_spent_seconds": 4
     },
     {
       "ply": 55,
@@ -664,7 +772,9 @@
       "eval_after_white_pov": 610.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.004368
+      "attention_weight": 0.004368,
+      "clock_seconds": 59,
+      "time_spent_seconds": 2
     },
     {
       "ply": 56,
@@ -676,7 +786,9 @@
       "eval_after_white_pov": 610.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.001444
+      "attention_weight": 0.001444,
+      "clock_seconds": 108,
+      "time_spent_seconds": 12
     },
     {
       "ply": 57,
@@ -688,7 +800,9 @@
       "eval_after_white_pov": 646.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.000723
+      "attention_weight": 0.000723,
+      "clock_seconds": 30,
+      "time_spent_seconds": 31
     },
     {
       "ply": 58,
@@ -700,7 +814,9 @@
       "eval_after_white_pov": 656.0,
       "cp_loss": 10.0,
       "phase": "middlegame",
-      "attention_weight": 8.2e-05
+      "attention_weight": 8.2e-05,
+      "clock_seconds": 99,
+      "time_spent_seconds": 11
     },
     {
       "ply": 59,
@@ -712,7 +828,9 @@
       "eval_after_white_pov": 649.0,
       "cp_loss": 7.0,
       "phase": "middlegame",
-      "attention_weight": 4.2e-05
+      "attention_weight": 4.2e-05,
+      "clock_seconds": 11,
+      "time_spent_seconds": 21
     },
     {
       "ply": 60,
@@ -724,7 +842,9 @@
       "eval_after_white_pov": 657.0,
       "cp_loss": 8.0,
       "phase": "middlegame",
-      "attention_weight": 2.8e-05
+      "attention_weight": 2.8e-05,
+      "clock_seconds": 97,
+      "time_spent_seconds": 4
     },
     {
       "ply": 61,
@@ -736,7 +856,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 657.0,
       "phase": "middlegame",
-      "attention_weight": 6.2e-05
+      "attention_weight": 6.2e-05,
+      "clock_seconds": 11,
+      "time_spent_seconds": 2
     },
     {
       "ply": 62,
@@ -748,7 +870,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 7.7e-05
+      "attention_weight": 7.7e-05,
+      "clock_seconds": 97,
+      "time_spent_seconds": 2
     },
     {
       "ply": 63,
@@ -760,7 +884,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 3.7e-05
+      "attention_weight": 3.7e-05,
+      "clock_seconds": 10,
+      "time_spent_seconds": 3
     },
     {
       "ply": 64,
@@ -772,7 +898,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 2.6e-05
+      "attention_weight": 2.6e-05,
+      "clock_seconds": 97,
+      "time_spent_seconds": 2
     },
     {
       "ply": 65,
@@ -784,7 +912,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 3.4e-05
+      "attention_weight": 3.4e-05,
+      "clock_seconds": 8,
+      "time_spent_seconds": 4
     },
     {
       "ply": 66,
@@ -796,7 +926,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.6e-05
+      "attention_weight": 1.6e-05,
+      "clock_seconds": 97,
+      "time_spent_seconds": 2
     },
     {
       "ply": 67,
@@ -808,7 +940,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 2.9e-05
+      "attention_weight": 2.9e-05,
+      "clock_seconds": 9,
+      "time_spent_seconds": 1
     },
     {
       "ply": 68,
@@ -820,7 +954,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.9e-05
+      "attention_weight": 1.9e-05,
+      "clock_seconds": 97,
+      "time_spent_seconds": 2
     },
     {
       "ply": 69,
@@ -832,7 +968,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 3.6e-05
+      "attention_weight": 3.6e-05,
+      "clock_seconds": 10,
+      "time_spent_seconds": 1
     },
     {
       "ply": 70,
@@ -844,7 +982,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.5e-05
+      "attention_weight": 1.5e-05,
+      "clock_seconds": 98,
+      "time_spent_seconds": 1
     },
     {
       "ply": 71,
@@ -856,7 +996,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 4.6e-05
+      "attention_weight": 4.6e-05,
+      "clock_seconds": 11,
+      "time_spent_seconds": 1
     },
     {
       "ply": 72,
@@ -868,7 +1010,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.9e-05
+      "attention_weight": 1.9e-05,
+      "clock_seconds": 98,
+      "time_spent_seconds": 2
     },
     {
       "ply": 73,
@@ -880,7 +1024,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 4.6e-05
+      "attention_weight": 4.6e-05,
+      "clock_seconds": 13,
+      "time_spent_seconds": 0
     },
     {
       "ply": 74,
@@ -892,7 +1038,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 0.000862
+      "attention_weight": 0.000862,
+      "clock_seconds": 99,
+      "time_spent_seconds": 1
     },
     {
       "ply": 75,
@@ -904,7 +1052,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.3e-05
+      "attention_weight": 1.3e-05,
+      "clock_seconds": 12,
+      "time_spent_seconds": 3
     },
     {
       "ply": 76,
@@ -916,7 +1066,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 3.5e-05
+      "attention_weight": 3.5e-05,
+      "clock_seconds": 92,
+      "time_spent_seconds": 9
     },
     {
       "ply": 77,
@@ -928,7 +1080,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.1e-05
+      "attention_weight": 1.1e-05,
+      "clock_seconds": 12,
+      "time_spent_seconds": 2
     },
     {
       "ply": 78,
@@ -940,7 +1094,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 2.7e-05
+      "attention_weight": 2.7e-05,
+      "clock_seconds": 93,
+      "time_spent_seconds": 1
     },
     {
       "ply": 79,
@@ -952,7 +1108,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 8e-06
+      "attention_weight": 8e-06,
+      "clock_seconds": 13,
+      "time_spent_seconds": 1
     },
     {
       "ply": 80,
@@ -964,7 +1122,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 4e-06
+      "attention_weight": 4e-06,
+      "clock_seconds": 93,
+      "time_spent_seconds": 2
     },
     {
       "ply": 81,
@@ -976,7 +1136,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.1e-05
+      "attention_weight": 1.1e-05,
+      "clock_seconds": 14,
+      "time_spent_seconds": 1
     },
     {
       "ply": 82,
@@ -988,7 +1150,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 4e-06
+      "attention_weight": 4e-06,
+      "clock_seconds": 93,
+      "time_spent_seconds": 2
     },
     {
       "ply": 83,
@@ -1000,7 +1164,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 8e-06
+      "attention_weight": 8e-06,
+      "clock_seconds": 15,
+      "time_spent_seconds": 1
     },
     {
       "ply": 84,
@@ -1012,7 +1178,9 @@
       "eval_after_white_pov": 0.0,
       "cp_loss": 0.0,
       "phase": "middlegame",
-      "attention_weight": 1.1e-05
+      "attention_weight": 1.1e-05,
+      "clock_seconds": 91,
+      "time_spent_seconds": 4
     }
   ]
 }
