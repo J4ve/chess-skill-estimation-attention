@@ -1,9 +1,13 @@
 # Move-level explanation of the rating estimate
 
-Written 2026-10-11 for the pre-oral defense on 2026-10-15, at the thesis consultant's
-request: why the model's rating estimate rises or falls at particular moves,
-interpreted through engine evaluation, position, and clock. Method, sample, and
-numbers below; case-study figures and a small per-ply JSON for each are in
+Written 2026-10-11, revised 2026-10-12, for the pre-oral defense on 2026-10-15,
+at the thesis consultant's request: why the model's rating estimate rises or
+falls at particular moves, interpreted through engine evaluation, position,
+and clock. The headline centipawn-loss coefficient and the separation-gap
+discussion below both changed after the first write-up (see Limitations and
+the regression section); anyone who read an earlier copy should re-read
+rather than reuse old numbers from it. Method, sample, and numbers below;
+case-study figures and a small per-ply JSON for each are in
 `analysis/figures/` and `analysis/move-explanation-data/`.
 
 **The model never sees an engine.** It is trained only on board positions, moves,
@@ -261,11 +265,26 @@ meaningfully smaller one than the raw number suggests, and `mirror_arm_a` is now
 also the prototype's selectable `gap_weighted` model (`e1f8fec`), so anyone
 watching an ultrabullet game through it would see White's and Black's live
 estimates swap which one reads higher on almost every move, not settle into two
-stable numbers. **The pre-registered separation criteria in
-`analysis/mirror-retrain-results.md` were scored at the final ply of each game**,
-so they inherit this same artifact; whether that changes how the "sides
-separate" result there should be read is a judgment call for the people who set
-that pre-registration, not this note.
+stable numbers. **Checked against the pre-registered separation criterion in
+`analysis/mirror-retrain-preregistration.md`, the parity correction does not
+change the verdict.** Criterion (c) requires `pred_gap_median >= 10.0` AND
+`signed_gap_pearson_r >= 0.30`, both computed by
+`analysis/scripts/side_mirroring_check.py` from each game's final-ply
+prediction, which is the same offline-pass value this note's live curve
+equals at its last point (see Method), so it is the same quantity this
+artifact lives in. On this note's own 3,000-game sample (not a substitute for
+the pre-registration's full 255,000-game test-set number, only a check of
+direction and magnitude): the raw final White-minus-Black value correlates
+with the true rating gap at r=0.41, the parity-corrected value at r=0.39,
+both comfortably above the 0.30 threshold; the raw median gap is 16.2, the
+parity-corrected median 14.5, both comfortably above the 10.0 threshold
+(`final_gap_parity_diagnostics.json`'s `preregistration_criterion_c_check`).
+Criterion (b), the wide-gap MAE check, does not involve a White-minus-Black
+difference at all (it compares each side's own prediction to its own true
+rating) and is not affected by this artifact. The last-mover bump is real and
+worth knowing about, but it reads as additive noise on top of a signal that
+clears both pre-registered thresholds with room to spare, not as a reason to
+revisit the "sides separate" verdict.
 
 ## A caveat the figures below depend on: attention is partly front-loaded by construction
 
@@ -274,8 +293,10 @@ Computed by `analysis/move_explanation_attention_diagnostics.py`, written to
 attention weight, averaged over 3,000 games, is 0.1486 at ply 1 and 0.00016 by
 ply 90, a 909-fold gap (`src/attention.py`'s `forward_causal`:
 `weights[b, t, :]` sums to 1 over valid keys `s <= t`, confirmed by reading the
-code directly for this note). `api.py`'s `attention_weights = ...mean(dim=1)` then
-averages each key's received weight over **all** `T` queries, including the
+code directly for this note). `ChessEloPredictor.forward`'s
+`attention_weights = attn_weights_raw.mean(dim=1)` (`src/chess_rating_net.py`,
+not `api.py`, which only squeezes the batch dimension off this already-computed
+tensor) then averages each key's received weight over **all** `T` queries, including the
 causally-masked zero entries for queries before that key, so an early ply is a
 valid attention key for nearly every later query while a late ply is valid for
 almost none, regardless of what the model actually learned. This mechanical
@@ -318,10 +339,13 @@ evaluation track in White's point of view (the model never sees this, only shown
 as a yardstick); and the model's own attention weight, with the partly
 mechanically front-loaded ply 1-9 region shaded (see the caveat above). Markers
 on the top panel mark the five highest centipawn-loss moves at ply 10 or later;
-the three largest are labeled. Per-ply JSON for both games (rating, evaluation,
-centipawn loss, phase, attention, clock remaining, and time spent, the model's
-own clock input) is at `analysis/move-explanation-data/case-accurate.json` and
-`case-swing.json`.
+the three largest are labeled. The eval panel fills blue/orange by sign but
+also overlays a thin gray line of every ply's actual value, so a one-ply
+swing through zero (such as `Qd2` below) is still visible even though the
+fill by itself would otherwise show only a sliver or nothing at that width.
+Per-ply JSON for both games (rating, evaluation, centipawn loss, phase,
+attention, clock remaining, and time spent, the model's own clock input) is
+at `analysis/move-explanation-data/case-accurate.json` and `case-swing.json`.
 
 ### Most accurate: `2021-06_game_0026363.pkl` (White 1248, Black 1244)
 
@@ -380,9 +404,11 @@ through plies 18-28, since each of those live points was its own separate
 prefix-recompute pass that could not yet see ply 28. That is a different claim
 from "centipawn loss moves the rating estimate," which the aggregate regression's
 small effect sizes still do not support, and the two 189/183-point losses at
-plies 27-28 do not produce any unusual drop in the live curve themselves (the
-curve keeps climbing through them); the peak attention at ply 28 does not drive
-the ply 18-28 climb that already happened by the time it is measured.
+plies 27-28 do not produce any unusual drop in the live (top-panel) curve
+themselves (the curve keeps climbing through them), even though the eval panel
+(middle) does show the brief dip Qd2 causes, from about +126 to -63 for one
+ply before Kh7 recovers it; the peak attention at ply 28 does not drive the
+ply 18-28 climb that already happened by the time it is measured.
 Time spent across plies 17-31 (a 3-minute-plus-2-second blitz time control) stays
 in an ordinary 1-15 second range with no value that stands out as explaining the
 climb; the largest single jumps in this window (such as +197 points at ply 18 and

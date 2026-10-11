@@ -131,13 +131,18 @@ def make_figure(gid, case, out_path, title_label):
     live_b = [r["live_black"] for r in rows]
     we, be = case["white_elo"], case["black_elo"]
 
+    # eval_track[i] (0-indexed row i, ply i+1) is "eval before this move",
+    # i.e. the position after i plies have been played -- so it belongs at
+    # x=i, not x=i+1. The one extra point this leaves off, the position
+    # after ALL n plies, is the last row's "eval after" value, at x=n.
+    # (An earlier version of this plot shifted every point one ply late and
+    # duplicated the x=n point; this version was checked against the raw
+    # per-ply JSON before being kept.)
+    n = len(rows)
     eval_track = [r["eval_before_white_pov"] for r in rows]
     last_after = rows[-1]["eval_after_white_pov"]
-    eval_plies = [0] + plies
-    eval_track_full = [eval_track[0] if eval_track[0] is not None else 0.0] + eval_track
-    if last_after is not None:
-        eval_plies = eval_plies + [plies[-1]]
-        eval_track_full = eval_track_full + [last_after]
+    eval_plies = list(range(n + (1 if last_after is not None else 0)))
+    eval_track_full = list(eval_track) + ([last_after] if last_after is not None else [])
 
     def clip(v):
         if v is None:
@@ -187,9 +192,21 @@ def make_figure(gid, case, out_path, title_label):
     ax1.legend(loc="best", fontsize=8, ncol=2, frameon=False)
     ax1.set_title("Live (prefix-only) rating estimate, both sides, vs true rating", fontsize=9.5, loc="left")
 
-    # Panel 2: Stockfish evaluation track, White POV.
-    ax2.fill_between(eval_plies, eval_clipped, 0, where=[v >= 0 for v in eval_clipped], color=BLUE, alpha=0.5, linewidth=0)
-    ax2.fill_between(eval_plies, eval_clipped, 0, where=[v < 0 for v in eval_clipped], color=ORANGE, alpha=0.5, linewidth=0)
+    # Panel 2: Stockfish evaluation track, White POV. interpolate=True fills
+    # through a zero-crossing segment instead of dropping it (the default
+    # "where" mask drops any point whose sign differs from its neighbors,
+    # which silently erases single-ply swings like a blunder that flips the
+    # sign of the evaluation); the thin gray line on top makes every ply's
+    # actual value visible regardless of fill behavior.
+    ax2.fill_between(
+        eval_plies, eval_clipped, 0, where=[v >= 0 for v in eval_clipped],
+        color=BLUE, alpha=0.5, linewidth=0, interpolate=True,
+    )
+    ax2.fill_between(
+        eval_plies, eval_clipped, 0, where=[v < 0 for v in eval_clipped],
+        color=ORANGE, alpha=0.5, linewidth=0, interpolate=True,
+    )
+    ax2.plot(eval_plies, eval_clipped, color=GRAY, linewidth=0.8)
     ax2.axhline(0, color=GRAY, linewidth=1)
     ax2.set_ylabel("Eval (cp, White POV)")
     ax2.set_ylim(-EVAL_CLIP_CP * 1.05, EVAL_CLIP_CP * 1.05)

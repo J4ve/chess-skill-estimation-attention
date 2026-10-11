@@ -8,7 +8,10 @@ move-explanation-results.md depends on, so they are not ad-hoc snippets:
      attention at query t were split evenly over its t causally-valid
      keys (chess_rating_net.py's attention module, forward_causal), the
      mean weight key k would receive, averaged over all T queries the
-     same way api.py's attention_weights = ...mean(dim=1) does, is
+     same way ChessEloPredictor.forward's own
+     attention_weights = attn_weights_raw.mean(dim=1) does
+     (chess_rating_net.py, not api.py, which only squeezes the batch
+     dimension off this already-computed tensor), is
      mean_{t=k..T}(1/t) = (H_T - H_{k-1}) / T, H = harmonic numbers.
 
 Also reports the fraction of Stockfish positions that reached the full

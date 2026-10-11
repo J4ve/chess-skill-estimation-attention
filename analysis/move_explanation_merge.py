@@ -263,9 +263,34 @@ def main():
                     "mean_final_wb_signed": float(s2["mirror_final_wb"].mean()),
                 }
         parity["by_bucket"][label] = entry
+
+    # Does the parity correction change the pre-registered separation
+    # verdict (analysis/mirror-retrain-preregistration.md criterion (c):
+    # pred_gap_median >= 10.0 AND signed_gap_pearson_r >= 0.30, both scored
+    # at the game's final ply, the same snapshot the artifact above lives
+    # at)? Recomputed here on this note's own 3,000-game sample, not the
+    # pre-registration's full 255,000-game test set, so these are a check
+    # on direction and magnitude, not a replacement for the pre-registered
+    # number.
+    true_gap = fdf["white_elo"] - fdf["black_elo"]
+    corr = {
+        "pearson_r_raw_final_wb_vs_true_gap": float(fdf["mirror_final_wb"].corr(true_gap)),
+        "pearson_r_parity_free_wb_vs_true_gap": float(fdf["mirror_parity_free_wb"].corr(true_gap)),
+        "preregistration_threshold_pearson_r": 0.30,
+        "preregistration_threshold_pred_gap_median": 10.0,
+        "median_abs_raw_final_wb": median_abs(fdf["mirror_final_wb"]),
+        "median_abs_parity_free_wb": median_abs(fdf["mirror_parity_free_wb"]),
+    }
+    parity["preregistration_criterion_c_check"] = corr
     with open("final_gap_parity_diagnostics.json", "w") as f:
         json.dump(parity, f, indent=2)
     print("Wrote final_gap_parity_diagnostics.json")
+    print(
+        f"criterion (c) check: raw r={corr['pearson_r_raw_final_wb_vs_true_gap']:.4f} "
+        f"parity-free r={corr['pearson_r_parity_free_wb_vs_true_gap']:.4f} "
+        f"(threshold 0.30); raw median={corr['median_abs_raw_final_wb']:.2f} "
+        f"parity-free median={corr['median_abs_parity_free_wb']:.2f} (threshold 10.0)"
+    )
 
 
 if __name__ == "__main__":

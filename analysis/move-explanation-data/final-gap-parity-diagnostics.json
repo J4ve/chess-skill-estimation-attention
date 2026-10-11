@@ -37,5 +37,13 @@
         }
       }
     }
+  },
+  "preregistration_criterion_c_check": {
+    "pearson_r_raw_final_wb_vs_true_gap": 0.4124941899003694,
+    "pearson_r_parity_free_wb_vs_true_gap": 0.39020030870076067,
+    "preregistration_threshold_pearson_r": 0.3,
+    "preregistration_threshold_pred_gap_median": 10.0,
+    "median_abs_raw_final_wb": 16.239250000000084,
+    "median_abs_parity_free_wb": 14.511100000000056
   }
 }
