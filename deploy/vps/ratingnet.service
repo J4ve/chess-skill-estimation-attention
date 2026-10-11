@@ -14,6 +14,10 @@ WorkingDirectory=/opt/ratingnet/app/src
 # missing, so the served arm can never silently fall back to model_55.pth, which
 # is not one of the study's arms.
 Environment=RATINGNET_CHECKPOINT=/opt/ratingnet/models/attn_tuned_best.pth
+# Optional: the gap-weighted separation arm for the web prototype's "Rating
+# model" menu. Unset or pointed at a missing file, that menu option just
+# reports unavailable; see deploy/vps/README.md.
+Environment=RATINGNET_CHECKPOINT_GAP_WEIGHTED=/opt/ratingnet/models/arm_a_gapweight_best.pth
 # Two vCPUs total, shared with another service. Without these, torch sizes its
 # thread pools from the core count and a single inference saturates the machine.
 Environment=OMP_NUM_THREADS=2

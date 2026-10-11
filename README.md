@@ -45,9 +45,11 @@ procedure.
 
 ## The app
 
-Stepping through a held-out test game, switching suspicion methods, in light and dark themes:
+Stepping through a held-out test game, switching suspicion methods, switching
+the rating model (curves separate under Gap-weighted), in light and dark
+themes:
 
-![Demo: stepping through a sample game, switching suspicion methods, in light and dark themes](docs/screenshots/demo.gif)
+![Demo: stepping through a sample game, switching suspicion methods, switching the rating model, in light and dark themes](docs/screenshots/demo.gif)
 
 ![Analysis view, light theme](docs/screenshots/analysis-light.png)
 
@@ -157,11 +159,31 @@ small and **are** committed, with their provenance, at `src/models/`. See
 [docs/development.md](docs/development.md) for the fallback checkpoint,
 submodule use, and the training path.
 
+The web prototype's "Rating model" menu can also serve a second, optional
+checkpoint, the gap-weighted separation arm (see "Rating model" in
+[docs/web-prototype.md](docs/web-prototype.md)). It is fetched and verified
+the same way:
+
+```bash
+mkdir -p models/mirror_arm_a_gapweight
+curl -L -o models/mirror_arm_a_gapweight/best_model.pth \
+  https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.2-weights-arm-a-gapweight/arm_a_gapweight_best.pth
+sha256sum models/mirror_arm_a_gapweight/best_model.pth
+# 97ffa6e77d53a47ee75eaa199670d9d795b66b45dfd687e5c441ebcfd77c0481
+```
+
+It is entirely optional: with no override and nothing found at that path, the
+server starts and runs exactly as before, just with the "Gap-weighted" menu
+option reporting unavailable.
+
 ## Published artifacts
 
 The frozen rating checkpoint and the computations behind the reported
 evaluation numbers are published as a GitHub release,
 [v0.1-weights-attn-tuned](https://github.com/J4ve/chess-skill-estimation-attention/releases/tag/v0.1-weights-attn-tuned).
+The optional gap-weighted separation arm (Arm A; see "Weights" above) is a
+separate release,
+[v0.2-weights-arm-a-gapweight](https://github.com/J4ve/chess-skill-estimation-attention/releases/tag/v0.2-weights-arm-a-gapweight).
 The analysis scripts that produced them are in this repository at
 [analysis/](analysis/) rather than in the release, so they can be browsed and
 diffed. The code that built the corpus underneath all of it, the Rust scanner,

@@ -119,6 +119,42 @@ for random picks on withheld rating bands), and so did the CNN-BiLSTM
 detector's, so critical moves stay the same whichever suspicion method is
 selected.
 
+## Rating model
+
+The **Rating model** menu, below the results header and styled like the
+suspicion card's Method selector, picks which loaded checkpoint scores the
+game: **Main model (as reported)** (default; the checkpoint behind every
+other reported number and screenshot in this study,
+`models/preflight_check_2m/best_model.pth`, the tuned attention arm) or
+**Gap-weighted** (the White/Black separation arm `mirror_arm_a_gapweight`,
+which passed its own pre-registered pass/fail criteria; see
+`analysis/mirror-retrain-results.md`). Switching re-runs the current game
+through the chosen checkpoint and redraws both rating curves; it has no
+effect on which game is loaded. The choice is not saved in `localStorage`
+(unlike the suspicion method): every fresh page load serves the main model,
+so a remembered choice can never make a screenshot or reported number look
+different from what the default view actually shows.
+
+Both checkpoints share one architecture, loaded once each at startup (see
+"The checkpoint" in [deploy/vps/README.md](../deploy/vps/README.md)); the
+gap-weighted one is optional and the menu option reports "Not available on
+this server" (and a switch attempt is rejected) when its checkpoint isn't
+found. Under the main model, the rating chart's legend reads "White/Black
+estimate (not independent)", since the two outputs are nearly one shared
+function of the game (see the chart's own (i) popover); the gap-weighted arm
+is trained specifically so the two curves separate, so that legend wording is
+dropped under it. The suspicion panel keeps working exactly the same under
+either model (same four methods, same cutoffs), with one added line under
+gap-weighted: the detectors were calibrated on the main model's outputs, not
+this one, since switching re-runs the *rating* model but not the detectors'
+own training.
+
+**Live mode.** The menu is disabled while a live stream is active: Live's
+curve is a frozen, move-by-move prefix run (see "Prefix-estimate semantics"
+below), and re-running it under a different model mid-stream isn't
+supported. Switching before starting a live session, or after loading a
+finished live game's full analysis, works normally.
+
 ## Suspicion score
 
 The suspicion card shows one score per side from the method picked in its

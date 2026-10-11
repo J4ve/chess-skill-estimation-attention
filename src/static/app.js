@@ -6,6 +6,13 @@ const HIDE_ACTUAL_RATINGS_KEY = "ratingnet.hideActualRatings";
 const THEME_KEY = "ratingnet.theme";
 const SUSPICION_METHOD_KEY = "ratingnet.suspicionMethod";
 const DEFAULT_SUSPICION_METHOD = "detector_a3g_seed0";
+
+// Rating model choice. Not persisted in localStorage on purpose: every fresh
+// page load serves the main model, matching every screenshot and reported
+// number, with no risk of a remembered choice surprising a later viewer.
+const MAIN_MODEL_ID = "main";
+const GAP_WEIGHTED_MODEL_ID = "gap_weighted";
+const DEFAULT_RATING_MODEL = MAIN_MODEL_ID;
 const LIVE_RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 const LIVE_CLOCK_TICK_MS = 100;
 const LOW_CLOCK_SECONDS = 20;
@@ -262,6 +269,10 @@ const METRIC_INFO = {
     term: "Why White and Black look alike",
     text: "White's and Black's estimates come from one shared network whose final layer barely separates the two outputs, so they are nearly the same function of the game (cosine similarity 0.9999 in this model, 1.0000 in the original architecture it extends). In practice the two curves land within a few rating points of each other, even when the real players differ by hundreds of points. This is an inherited property of the architecture, not a bug and not an effect of the attention mechanism this study added, so read the chart as a single skill estimate for the game rather than two independent per-player readings.",
   },
+  ratingModel: {
+    term: "Rating model",
+    text: "Main model is the checkpoint behind every reported number and screenshot in this study. Gap-weighted is a separation arm trained so White's and Black's estimates actually differ (median predicted gap about 16 rating points, versus under 1 for the main model) without giving up overall accuracy; it passed its own pre-registered pass/fail criteria. Switching re-runs this game through the chosen checkpoint and redraws both curves. The suspicion detectors below always stay calibrated on the main model, whichever is selected.",
+  },
 };
 
 const state = {
@@ -283,6 +294,9 @@ const state = {
   activeInfoIcon: null,
   suspicionMethod: DEFAULT_SUSPICION_METHOD,
   suspicionMethods: null, // src/static/suspicion_methods.json, keyed by id
+  ratingModel: DEFAULT_RATING_MODEL,
+  ratingModelAvailable: { main: true, gap_weighted: true }, // refined by GET /health at init
+  lastAnalysisRequest: null, // {kind: "pgn"|"lichess", pgn?, gameId?, baselines, topK, minPly, sampleMeta?}
   boardInView: true,
   live: {
     active: false,
@@ -841,7 +855,7 @@ async function loadAndAnalyzeSample(sample, cardEl) {
       throw new Error(`Could not load sample PGN (status ${pgnResponse.status}).`);
     }
     const pgnText = await pgnResponse.text();
-    const query = `top_k=${topK}&min_ply=${minPly}`;
+    const query = `top_k=${topK}&min_ply=${minPly}${ratingModelQuerySuffix()}`;
     const response = await fetch(`${API_BASE}/predict/pgn?${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -851,6 +865,14 @@ async function loadAndAnalyzeSample(sample, cardEl) {
       throw new Error(await parseErrorDetail(response));
     }
     const result = await response.json();
+    state.lastAnalysisRequest = {
+      kind: "pgn",
+      pgn: pgnText,
+      baselines: { white_baseline: null, black_baseline: null },
+      topK,
+      minPly,
+      sampleMeta: sample,
+    };
     renderResult(result, { sampleMeta: sample });
   } catch (err) {
     showError(err.message || String(err));
@@ -881,16 +903,24 @@ function currentBaselines() {
   };
 }
 
+// Appended to a predict/* query string. Omitted entirely for the main model,
+// so a default request's query string (and therefore its server-side cache
+// key) is byte-identical to before this selector existed.
+function ratingModelQuerySuffix() {
+  return state.ratingModel === GAP_WEIGHTED_MODEL_ID ? `&model=${GAP_WEIGHTED_MODEL_ID}` : "";
+}
+
 async function submitAnalysis() {
   clearError();
   stopLiveStream({ silent: true });
   const topK = currentTopK();
   const minPly = currentMinPly();
   const baselines = currentBaselines();
-  const query = `top_k=${topK}&min_ply=${minPly}`;
+  const query = `top_k=${topK}&min_ply=${minPly}${ratingModelQuerySuffix()}`;
 
   setLoading(true);
   let response;
+  let lastRequest;
   try {
     if (state.activeTab === "paste") {
       const pgn = $("pgn-text").value.trim();
@@ -904,6 +934,7 @@ async function submitAnalysis() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pgn, ...baselines }),
       });
+      lastRequest = { kind: "pgn", pgn, baselines, topK, minPly };
     } else if (state.activeTab === "upload") {
       const fileInput = $("pgn-file");
       if (!fileInput.files || fileInput.files.length === 0) {
@@ -911,14 +942,19 @@ async function submitAnalysis() {
         setLoading(false);
         return;
       }
+      const uploadedFile = fileInput.files[0];
+      const pgnText = await uploadedFile.text();
       const formData = new FormData();
-      formData.append("file", fileInput.files[0]);
+      formData.append("file", uploadedFile);
       if (baselines.white_baseline !== null) formData.append("white_baseline", baselines.white_baseline);
       if (baselines.black_baseline !== null) formData.append("black_baseline", baselines.black_baseline);
       response = await fetch(`${API_BASE}/predict/upload?${query}`, {
         method: "POST",
         body: formData,
       });
+      // Switching the rating model later re-runs via /predict/pgn (text, not a
+      // file), which is an equivalent request as far as _run_inference cares.
+      lastRequest = { kind: "pgn", pgn: pgnText, baselines, topK, minPly };
     } else {
       const gameId = $("lichess-id").value.trim();
       if (!gameId) {
@@ -931,6 +967,7 @@ async function submitAnalysis() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ game_id: gameId, ...baselines }),
       });
+      lastRequest = { kind: "lichess", gameId, baselines, topK, minPly };
     }
   } catch (networkErr) {
     showError(`Could not reach the API: ${networkErr.message}`);
@@ -946,7 +983,104 @@ async function submitAnalysis() {
 
   const result = await response.json();
   setLoading(false);
+  state.lastAnalysisRequest = lastRequest;
   renderResult(result);
+}
+
+// --- Rating model selector ----------------------------------------------------
+
+async function rerunCurrentAnalysisWithModel() {
+  const req = state.lastAnalysisRequest;
+  if (!req) return;
+  clearError();
+  setLoading(true);
+  const query = `top_k=${req.topK}&min_ply=${req.minPly}${ratingModelQuerySuffix()}`;
+  let response;
+  try {
+    if (req.kind === "pgn") {
+      response = await fetch(`${API_BASE}/predict/pgn?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pgn: req.pgn, ...req.baselines }),
+      });
+    } else {
+      response = await fetch(`${API_BASE}/predict/lichess?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game_id: req.gameId, ...req.baselines }),
+      });
+    }
+  } catch (networkErr) {
+    showError(`Could not reach the API: ${networkErr.message}`);
+    setLoading(false);
+    revertRatingModelSelection();
+    return;
+  }
+  if (!response.ok) {
+    showError(await parseErrorDetail(response));
+    setLoading(false);
+    revertRatingModelSelection();
+    return;
+  }
+  const result = await response.json();
+  setLoading(false);
+  renderResult(result, { sampleMeta: req.sampleMeta || null });
+}
+
+// Falls back to the main model, e.g. when the gap-weighted checkpoint turns
+// out not to be loaded on this server after all (the /health check at init
+// normally catches this first).
+function revertRatingModelSelection() {
+  state.ratingModel = MAIN_MODEL_ID;
+  $("rating-model-select").value = MAIN_MODEL_ID;
+}
+
+function onRatingModelChange(modelId) {
+  if (modelId === state.ratingModel) return;
+  if (state.ratingModelAvailable[modelId] === false) {
+    $("rating-model-select").value = state.ratingModel;
+    showError("The gap-weighted rating model is not available on this server.");
+    return;
+  }
+  if (state.live.active) {
+    // Live's curve is a frozen, move-by-move prefix run (see docs/web-prototype.md,
+    // "Prefix-estimate semantics"); re-running it under a different model
+    // mid-stream isn't supported, so the selector is disabled while live is
+    // active (see updateLiveButtons) and this is just a defensive fallback.
+    $("rating-model-select").value = state.ratingModel;
+    return;
+  }
+  state.ratingModel = modelId;
+  if (state.play.active) {
+    schedulePlayAnalysis();
+    return;
+  }
+  rerunCurrentAnalysisWithModel();
+}
+
+async function loadRatingModelAvailability() {
+  try {
+    const response = await fetch(`${API_BASE}/health`);
+    if (!response.ok) throw new Error(`status ${response.status}`);
+    const health = await response.json();
+    const entry = (health.rating_models || {})[GAP_WEIGHTED_MODEL_ID];
+    const available = Boolean(entry && entry.available);
+    state.ratingModelAvailable[GAP_WEIGHTED_MODEL_ID] = available;
+    const option = $("rating-model-select").querySelector(`option[value="${GAP_WEIGHTED_MODEL_ID}"]`);
+    if (option) option.disabled = !available;
+    $("rating-model-unavailable").hidden = available;
+  } catch (err) {
+    // Selector stays enabled; a switch attempt would then surface the server's
+    // own error instead of a silently wrong guess about availability.
+    console.warn("Could not check rating model availability:", err);
+  }
+}
+
+function setupRatingModelSelector() {
+  const select = $("rating-model-select");
+  select.value = state.ratingModel;
+  select.addEventListener("change", (evt) => onRatingModelChange(evt.target.value));
+  loadRatingModelAvailability();
 }
 
 // --- Result rendering ----------------------------------------------------------
@@ -1322,6 +1456,7 @@ function renderSuspicion(result) {
   const available = Boolean(entry && entry.available);
   $("suspicion-method-unavailable").hidden = available;
   $("suspicion-section").dataset.method = state.suspicionMethod;
+  $("suspicion-gap-weighted-caveat").hidden = state.ratingModel !== GAP_WEIGHTED_MODEL_ID;
 
   $("suspicion-baseline-warning").hidden = ![result.white_baseline_source, result.black_baseline_source].includes(
     "self_prediction_fallback"
@@ -1601,10 +1736,15 @@ function renderChart(result) {
   const labels = [0, ...perMove.map((m) => m.ply)];
   const whiteRatings = [result.white_baseline, ...perMove.map((m) => m.white_rating)];
   const blackRatings = [result.black_baseline, ...perMove.map((m) => m.black_rating)];
+  // The main model's two outputs are nearly one shared function of the game
+  // (see METRIC_INFO.ratingCurvesOverlap); the gap-weighted arm is trained
+  // specifically so they don't share that property, so the caveat no longer
+  // applies under it.
+  const independenceSuffix = state.ratingModel === GAP_WEIGHTED_MODEL_ID ? "" : " (not independent)";
 
   const datasets = [
     {
-      label: "White estimate (not independent)",
+      label: `White estimate${independenceSuffix}`,
       data: whiteRatings,
       borderColor: palette.white,
       backgroundColor: "transparent",
@@ -1612,7 +1752,7 @@ function renderChart(result) {
       borderWidth: 2,
     },
     {
-      label: "Black estimate (not independent)",
+      label: `Black estimate${independenceSuffix}`,
       data: blackRatings,
       borderColor: palette.black,
       backgroundColor: "transparent",
@@ -2293,6 +2433,9 @@ function updateLiveButtons() {
   $("live-stop-button").hidden = !live.active;
   $("live-follow-button").disabled = live.active;
   $("live-tv-button").disabled = live.active;
+  // Live's curve is a frozen, move-by-move prefix run; switching models
+  // mid-stream isn't supported (see onRatingModelChange).
+  $("rating-model-select").disabled = live.active;
 
   const panelHasContent = $("live-status-text").textContent.trim().length > 0 && !$("live-badge").hidden;
   $("live-status-panel").hidden = !panelHasContent;
@@ -2598,16 +2741,26 @@ async function loadFullGameAnalysisForLiveGame() {
   const minPly = currentMinPly();
   $("live-status-text").textContent = "Loading full analysis...";
   try {
-    const response = await fetch(`${API_BASE}/predict/lichess?top_k=${topK}&min_ply=${minPly}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game_id: state.live.gameId }),
-    });
+    const response = await fetch(
+      `${API_BASE}/predict/lichess?top_k=${topK}&min_ply=${minPly}${ratingModelQuerySuffix()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game_id: state.live.gameId }),
+      }
+    );
     if (!response.ok) {
       throw new Error(await parseErrorDetail(response));
     }
     const result = await response.json();
     closeLiveEventSourceQuietly();
+    state.lastAnalysisRequest = {
+      kind: "lichess",
+      gameId: state.live.gameId,
+      baselines: { white_baseline: null, black_baseline: null },
+      topK,
+      minPly,
+    };
     renderResult(result);
   } catch (err) {
     showError(err.message || String(err));
@@ -3258,7 +3411,7 @@ async function runPlayAnalysis() {
   let response = null;
   let networkErr = null;
   try {
-    response = await fetch(`${API_BASE}/predict/pgn?top_k=${topK}&min_ply=${minPly}`, {
+    response = await fetch(`${API_BASE}/predict/pgn?top_k=${topK}&min_ply=${minPly}${ratingModelQuerySuffix()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
@@ -3528,6 +3681,7 @@ function init() {
   setupInfoPopovers();
   renderMetricsGlossary();
   setupSuspicionMethodSelector();
+  setupRatingModelSelector();
   $("submit-button").addEventListener("click", submitAnalysis);
 }
 

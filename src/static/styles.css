@@ -1670,6 +1670,18 @@ body:has(#results-panel[hidden]) .tab-panel.samples-panel {
   color: var(--chip-high-text);
 }
 
+/* Rating model selector: which checkpoint computed the curves and scores on
+   screen. A standalone card row (not inside the suspicion grid), styled like
+   .suspicion-method-row below. */
+.rating-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 /* Method selector: which suspicion score the bars show, with that method's
    own measured results as a one-line caption. */
 .suspicion-method-row {

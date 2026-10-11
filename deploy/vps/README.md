@@ -46,6 +46,27 @@ explicitly matters: `api.py` resolves that variable first and raises if the file
 is missing, so the service can never silently fall back to `model_55.pth`, which
 is not one of the study's arms and reproduces no reported number.
 
+### The optional second checkpoint (Rating model menu)
+
+The web prototype's "Rating model" menu can also serve the gap-weighted
+separation arm. Unlike the main checkpoint, it is genuinely optional: with no
+override and nothing found at the default path, the service starts exactly
+as before and that menu option just reports unavailable.
+
+```bash
+curl -fsSL -o /opt/ratingnet/models/arm_a_gapweight_best.pth \
+  https://github.com/J4ve/chess-skill-estimation-attention/releases/download/v0.2-weights-arm-a-gapweight/arm_a_gapweight_best.pth
+sha256sum /opt/ratingnet/models/arm_a_gapweight_best.pth
+# 97ffa6e77d53a47ee75eaa199670d9d795b66b45dfd687e5c441ebcfd77c0481
+```
+
+`ratingnet.service` sets `RATINGNET_CHECKPOINT_GAP_WEIGHTED` to that path, the
+same way it sets `RATINGNET_CHECKPOINT` for the main checkpoint. It is loaded
+with a **strict** state-dict load (not the main checkpoint's lenient one):
+the arm is expected to share the main checkpoint's exact architecture, so any
+mismatch should fail loudly at startup rather than silently serve a half-wired
+model.
+
 ## Install
 
 ```bash

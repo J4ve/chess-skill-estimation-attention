@@ -7,14 +7,23 @@
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /health` | Model load status, device, and checkpoint path. |
+| `GET /health` | Model load status, device, and checkpoint path, plus `rating_models` (per rating-model id: `available`, `checkpoint_path`). |
 | `GET /` | The web prototype (`src/static/index.html`). |
 | `GET /api` | Machine-readable endpoint list. |
-| `POST /predict/pgn` | Body `{pgn, white_baseline?, black_baseline?}`. Query `top_k` (default 5), `min_ply` (default 10). |
-| `POST /predict/upload` | Multipart form: `file` (`.pgn`), `white_baseline?`, `black_baseline?`. Query `top_k`, `min_ply`. |
-| `POST /predict/lichess` | Body `{game_id, white_baseline?, black_baseline?}`, where `game_id` is a bare 8-character Lichess ID or a full game URL. Query `top_k`, `min_ply`. |
+| `POST /predict/pgn` | Body `{pgn, white_baseline?, black_baseline?}`. Query `top_k` (default 5), `min_ply` (default 10), `model` (default `main`). |
+| `POST /predict/upload` | Multipart form: `file` (`.pgn`), `white_baseline?`, `black_baseline?`. Query `top_k`, `min_ply`, `model`. |
+| `POST /predict/lichess` | Body `{game_id, white_baseline?, black_baseline?}`, where `game_id` is a bare 8-character Lichess ID or a full game URL. Query `top_k`, `min_ply`, `model`. |
 | `GET /live/stream/{game_id}` | Server-Sent Events. Follows one Lichess game (ongoing or just-finished) move by move. Query `top_k`, `min_ply`, `white_baseline?`, `black_baseline?`. See [Live mode](web-prototype.md#live-mode). |
 | `GET /live/tv` | Server-Sent Events. Follows Lichess TV's currently featured game, switching automatically when TV switches games. Query `top_k`, `min_ply`. See [Live mode](web-prototype.md#live-mode). |
+
+`model` selects which loaded rating-model checkpoint scores the game: `main`
+(default, the checkpoint behind every other reported number) or
+`gap_weighted` (the separation arm; see "Rating model" in
+[web-prototype.md](web-prototype.md#rating-model)). Any other value is
+rejected with HTTP 422, and `gap_weighted` is rejected with HTTP 422 if that
+checkpoint isn't loaded on this server (`GET /health`'s `rating_models`
+reports which are). The live endpoints do not take `model`; they always use
+`main` (see "Live mode").
 
 All three `predict/*` endpoints return the same shape:
 
@@ -66,6 +75,13 @@ All three `predict/*` endpoints return the same shape:
   method's own entry in `src/static/suspicion_cutoffs.json`).
 - `default_suspicion_method`: the method mirrored in the top-level
   `*_suspicion_*` fields (`detector_a3g_seed0`).
+- `rating_model`: present only when the request's `model` was `gap_weighted`
+  (omitted entirely for `main`, so a default request's response is
+  byte-identical to before this field existed). Every suspicion method above
+  is still computed from this request's own rating-model pass, i.e. from
+  whichever checkpoint `model` selected, not recalibrated for it; that is
+  why the web prototype shows a caveat that the detectors were calibrated on
+  the main model whenever `gap_weighted` is selected.
 - `per_move`: one record per ply (`ply`, `move` as SAN, `uci`, `white_rating`,
   `black_rating`, `attention_weight`, `white_deviation`, `black_deviation`,
   `clock_seconds`, `time_spent_seconds`). `clock_seconds` is that ply's mover's

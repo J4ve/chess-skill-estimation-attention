@@ -37,7 +37,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # Allow imports both when running `python src/api.py` and via `from src.api import ...`.
 _SRC_DIR = Path(__file__).resolve().parent
@@ -84,6 +84,22 @@ MODEL: ChessEloPredictor | None = None
 MODEL_PARAMS: dict[str, Any] | None = None
 DEVICE: torch.device | None = None
 CHECKPOINT_PATH: Path | None = None
+
+# Rating model selector (web prototype "Rating model" menu): the main model
+# above is always MAIN_MODEL_ID. GAP_WEIGHTED_MODEL_ID is the White/Black
+# separation arm (mirror_arm_a_gapweight, analysis/mirror-retrain-results.md),
+# loaded once at startup alongside the main model when its checkpoint is
+# found; None (and therefore unavailable) otherwise. Both share one device.
+MAIN_MODEL_ID = "main"
+GAP_WEIGHTED_MODEL_ID = "gap_weighted"
+RATING_MODEL_IDS = (MAIN_MODEL_ID, GAP_WEIGHTED_MODEL_ID)
+DEFAULT_MODEL_ID = MAIN_MODEL_ID
+# Kept in sync with RATING_MODEL_IDS by hand; FastAPI/pydantic uses this to
+# reject an unknown ?model= value with HTTP 422 before _run_inference sees it.
+RatingModelParam = Literal["main", "gap_weighted"]
+
+GAP_WEIGHTED_MODEL: ChessEloPredictor | None = None
+GAP_WEIGHTED_CHECKPOINT_PATH: Path | None = None
 
 # The trained detector (main suspicion score), loaded once at startup. None when
 # its weights are missing, in which case the computed score S_att is the main
@@ -141,6 +157,11 @@ FROZEN_CHECKPOINT_REL = Path("models") / "preflight_check_2m" / "best_model.pth"
 # Omori's released baseline: no attention, no anomaly branch. Only served
 # when the frozen thesis checkpoint above cannot be found.
 BASELINE_CHECKPOINT_REL = Path("models") / "model_55.pth"
+# The gap-weighted separation arm (Arm A), stored and fetched the same way as
+# the main checkpoint above (see deploy/vps/README.md): gitignored, not in
+# git, fetched separately and pointed at by RATINGNET_CHECKPOINT_GAP_WEIGHTED,
+# or discovered at this relative path.
+GAP_WEIGHTED_CHECKPOINT_REL = Path("models") / "mirror_arm_a_gapweight" / "best_model.pth"
 
 
 def _find_checkpoint(relative: Path) -> Path | None:
@@ -237,6 +258,74 @@ def _load_model() -> tuple[ChessEloPredictor, dict[str, Any], torch.device, Path
     return model, params, device, checkpoint_path
 
 
+def _discover_gap_weighted_checkpoint() -> Path | None:
+    """Like ``_discover_checkpoint``, but for the optional gap-weighted arm:
+    returns None (never raises) when no checkpoint is found, since this
+    model is allowed to be simply unavailable rather than a startup error."""
+    override = os.environ.get("RATINGNET_CHECKPOINT_GAP_WEIGHTED")
+    if override:
+        override_path = Path(override)
+        if not override_path.exists():
+            raise FileNotFoundError(
+                f"RATINGNET_CHECKPOINT_GAP_WEIGHTED is set to '{override_path}', but that file does not exist."
+            )
+        return override_path.resolve()
+    return _find_checkpoint(GAP_WEIGHTED_CHECKPOINT_REL)
+
+
+def _load_gap_weighted_model(device: torch.device) -> tuple[ChessEloPredictor, Path] | None:
+    """Load the gap-weighted separation arm, if its checkpoint is present.
+
+    Unlike the main model's load_base_state_dict(strict=False), this uses a
+    strict state-dict load: the arm is expected to share the main model's
+    exact architecture (use_attention, use_anomaly, separate_heads=False; see
+    analysis/mirror-retrain-results.md), so any key mismatch is a real
+    packaging bug to fail loudly on, not a benign missing key to warn past.
+    """
+    checkpoint_path = _discover_gap_weighted_checkpoint()
+    if checkpoint_path is None:
+        logging.warning(
+            "Gap-weighted checkpoint not found at %s (and RATINGNET_CHECKPOINT_GAP_WEIGHTED is not "
+            "set); the 'Gap-weighted' rating model option will be unavailable.",
+            GAP_WEIGHTED_CHECKPOINT_REL,
+        )
+        return None
+    logging.info("Loading gap-weighted checkpoint from %s", checkpoint_path)
+    saved = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    params = saved["params"]
+
+    for const_name, expected, key in (
+        ("RATINGS_MEAN", RATINGS_MEAN, "ratings_mean"),
+        ("RATINGS_STD", RATINGS_STD, "ratings_std"),
+    ):
+        actual = params.get(key)
+        if actual is not None and actual != expected:
+            raise ValueError(
+                f"Gap-weighted checkpoint was trained with {key}={actual}, but this server "
+                f"de-standardizes every rating model's output with the hardcoded {const_name}="
+                f"{expected}. Serving it as-is would silently produce wrong rating curves."
+            )
+
+    model = ChessEloPredictor(
+        conv_filters=params.get("conv_filters", 32),
+        lstm_layers=params.get("lstm_layers", 3),
+        dropout_rate=params.get("dropout_rate", 0.5),
+        lstm_h=params.get("lstm_h", 64),
+        fc1_h=params.get("fc1_h", 32),
+        bidirectional=params.get("bidirectional", True),
+        use_attention=params.get("use_attention", False),
+        attention_type=params.get("attention_type", "bahdanau"),
+        attention_dim=params.get("attention_dim", 64),
+        use_anomaly=params.get("use_anomaly", False) or params.get("use_attention", False),
+        deeper_cnn=params.get("deeper_cnn", False),
+        separate_heads=params.get("separate_heads", False),
+    ).to(device)
+    model.load_state_dict(saved["model_state_dict"], strict=True)
+    model.eval()
+    logging.info("Gap-weighted model loaded on %s", device)
+    return model, checkpoint_path
+
+
 def _load_method_cutoffs(path: Path) -> dict[str, dict[str, Any]]:
     """{method_id: cutoffs} for every entry in the combined cutoffs file whose
     own "score" field matches its key; others are dropped with a warning."""
@@ -294,15 +383,21 @@ async def lifespan(app: FastAPI):
     """Startup hook: load the model once and keep it in memory."""
     global MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH, METHOD_CUTOFFS
     global DETECTOR, LGBM_DETECTOR, CNN_BILSTM_DETECTOR
+    global GAP_WEIGHTED_MODEL, GAP_WEIGHTED_CHECKPOINT_PATH
     _setup_logging()
     MODEL, MODEL_PARAMS, DEVICE, CHECKPOINT_PATH = _load_model()
     logging.info("Serving checkpoint: %s", CHECKPOINT_PATH)
+    gap_weighted = _load_gap_weighted_model(DEVICE)
+    if gap_weighted is not None:
+        GAP_WEIGHTED_MODEL, GAP_WEIGHTED_CHECKPOINT_PATH = gap_weighted
+        logging.info("Serving gap-weighted checkpoint: %s", GAP_WEIGHTED_CHECKPOINT_PATH)
     DETECTOR = _load_detector()
     LGBM_DETECTOR = _load_lgbm_detector()
     CNN_BILSTM_DETECTOR = _load_cnn_bilstm_detector()
     METHOD_CUTOFFS = _load_method_cutoffs(SUSPICION_CUTOFFS_PATH)
     yield
     MODEL = None
+    GAP_WEIGHTED_MODEL = None
 
 
 app = FastAPI(
@@ -469,21 +564,40 @@ def _suspicion_methods(
     return methods
 
 
+def _resolve_rating_model(model_id: str) -> tuple[ChessEloPredictor, torch.device]:
+    """The (model, device) pair to run inference with for ``model_id``.
+
+    Raises ValueError (translated to HTTP 422 by the caller) for an unknown
+    id or one whose checkpoint isn't loaded on this server, rather than
+    silently falling back to the main model.
+    """
+    if model_id == MAIN_MODEL_ID:
+        assert MODEL is not None and DEVICE is not None
+        return MODEL, DEVICE
+    if model_id == GAP_WEIGHTED_MODEL_ID:
+        if GAP_WEIGHTED_MODEL is None:
+            raise ValueError("The gap-weighted rating model is not available on this server.")
+        assert DEVICE is not None
+        return GAP_WEIGHTED_MODEL, DEVICE
+    raise ValueError(f"Unknown rating model '{model_id}'. Expected one of {RATING_MODEL_IDS}.")
+
+
 def _run_inference(
     pgn_text: str,
     white_baseline_request: float | None,
     black_baseline_request: float | None,
     top_k: int,
     min_ply: int = DEFAULT_MIN_PLY,
+    model_id: str = DEFAULT_MODEL_ID,
 ) -> dict[str, Any]:
-    assert MODEL is not None and DEVICE is not None
+    active_model, device = _resolve_rating_model(model_id)
 
     positions, clocks, lengths, moves, san_moves, headers, raw_clock_seconds = _pgn_to_tensor_inputs(pgn_text)
-    positions = positions.to(DEVICE)
-    clocks = clocks.to(DEVICE)
+    positions = positions.to(device)
+    clocks = clocks.to(device)
 
     with torch.no_grad():
-        outputs = MODEL(
+        outputs = active_model(
             positions,
             clocks,
             lengths,
@@ -519,12 +633,12 @@ def _run_inference(
     # Anomaly scoring is only available when the served checkpoint has an anomaly
     # branch. Omori's baseline model_55.pth does not, so emit neutral scores there.
     seq_len = per_move_preds.size(0)
-    anomaly_available = MODEL.anomaly_detector is not None
+    anomaly_available = active_model.anomaly_detector is not None
     if anomaly_available:
         # Compute anomaly scores using the attention-weighted deviation formula.
         # Predictions must be de-standardized so deviations are on the same Elo
         # scale as the baseline ratings.
-        anomaly = MODEL.anomaly_detector(
+        anomaly = active_model.anomaly_detector(
             predictions=per_move_preds_orig.unsqueeze(0),
             baseline=baseline,
             attention_weights=raw_attention.squeeze(0).unsqueeze(0) if raw_attention is not None else None,
@@ -566,7 +680,7 @@ def _run_inference(
             method_scores[lgbm_module.SCORE_ID] = lgbm_module.score_game(LGBM_DETECTOR, *detector_args)
         if CNN_BILSTM_DETECTOR is not None:
             method_scores[cnn_bilstm_module.SCORE_ID] = cnn_bilstm_module.score_game(
-                CNN_BILSTM_DETECTOR, MODEL, positions, clocks
+                CNN_BILSTM_DETECTOR, active_model, positions, clocks
             )
     white_detector, black_detector = method_scores[detector_module.SCORE_ID] or (None, None)
 
@@ -625,7 +739,7 @@ def _run_inference(
     result_header = (headers.get("Result") or "*").strip()
     ongoing = result_header == "*"
 
-    return {
+    result = {
         "headers": dict(headers),
         "white_baseline": round(white_resolution.value, 2),
         "black_baseline": round(black_resolution.value, 2),
@@ -656,6 +770,12 @@ def _run_inference(
         "ongoing": ongoing,
         "provisional": ongoing,
     }
+    # Only present for a non-default model, so a default request's response is
+    # byte-identical to before this selector existed (existing manuscript
+    # numbers and screenshots of the default view stay valid).
+    if model_id != DEFAULT_MODEL_ID:
+        result["rating_model"] = model_id
+    return result
 
 
 def _run_inference_or_422(
@@ -664,10 +784,11 @@ def _run_inference_or_422(
     black_baseline: float | None,
     top_k: int,
     min_ply: int = DEFAULT_MIN_PLY,
+    model_id: str = DEFAULT_MODEL_ID,
 ) -> dict[str, Any]:
     """Run inference, translating expected PGN/model-input problems into HTTP 422."""
     try:
-        return _run_inference(pgn_text, white_baseline, black_baseline, top_k, min_ply)
+        return _run_inference(pgn_text, white_baseline, black_baseline, top_k, min_ply, model_id)
     except ValueError as exc:
         logging.info("Rejecting request: %s", exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -680,6 +801,16 @@ async def health():
         "device": str(DEVICE),
         "model_loaded": MODEL is not None,
         "checkpoint_path": str(CHECKPOINT_PATH) if CHECKPOINT_PATH is not None else None,
+        "rating_models": {
+            MAIN_MODEL_ID: {
+                "available": MODEL is not None,
+                "checkpoint_path": str(CHECKPOINT_PATH) if CHECKPOINT_PATH is not None else None,
+            },
+            GAP_WEIGHTED_MODEL_ID: {
+                "available": GAP_WEIGHTED_MODEL is not None,
+                "checkpoint_path": str(GAP_WEIGHTED_CHECKPOINT_PATH) if GAP_WEIGHTED_CHECKPOINT_PATH is not None else None,
+            },
+        },
     }
 
 
@@ -690,17 +821,19 @@ async def predict_pgn_text(
     min_ply: int = Query(
         DEFAULT_MIN_PLY, ge=0, le=100, description="Exclude plies before this from critical-move ranking"
     ),
+    model: RatingModelParam = Query(DEFAULT_MODEL_ID, description="Rating model: 'main' (default) or 'gap_weighted'"),
 ):
     """Submit PGN text and receive per-move ratings, suspicion scores, and critical moves."""
     cache_key = _stable_cache_key(
-        "pgn_text", request.pgn, str(request.white_baseline), str(request.black_baseline), str(top_k), str(min_ply)
+        "pgn_text", request.pgn, str(request.white_baseline), str(request.black_baseline), str(top_k), str(min_ply),
+        model,
     )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
 
-    result = _run_inference_or_422(request.pgn, request.white_baseline, request.black_baseline, top_k, min_ply)
+    result = _run_inference_or_422(request.pgn, request.white_baseline, request.black_baseline, top_k, min_ply, model)
 
-    _log_prediction({"source": "pgn_text", "cache_key": cache_key, **result})
+    _log_prediction({"source": "pgn_text", "cache_key": cache_key, "model_id": model, **result})
     response = {"status": "ok", **result}
     _cache_put(cache_key, response)
     return response
@@ -715,19 +848,21 @@ async def predict_pgn_upload(
     min_ply: int = Query(
         DEFAULT_MIN_PLY, ge=0, le=100, description="Exclude plies before this from critical-move ranking"
     ),
+    model: RatingModelParam = Query(DEFAULT_MODEL_ID, description="Rating model: 'main' (default) or 'gap_weighted'"),
 ):
     """Upload a .pgn file and receive per-move ratings, suspicion scores, and critical moves."""
     content = await file.read()
     pgn_text = content.decode("utf-8", errors="replace")
     cache_key = _stable_cache_key(
-        "pgn_upload", file.filename, pgn_text, str(white_baseline), str(black_baseline), str(top_k), str(min_ply)
+        "pgn_upload", file.filename, pgn_text, str(white_baseline), str(black_baseline), str(top_k), str(min_ply),
+        model,
     )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
 
-    result = _run_inference_or_422(pgn_text, white_baseline, black_baseline, top_k, min_ply)
+    result = _run_inference_or_422(pgn_text, white_baseline, black_baseline, top_k, min_ply, model)
 
-    _log_prediction({"source": "pgn_upload", "filename": file.filename, "cache_key": cache_key, **result})
+    _log_prediction({"source": "pgn_upload", "filename": file.filename, "cache_key": cache_key, "model_id": model, **result})
     response = {"status": "ok", **result}
     _cache_put(cache_key, response)
     return response
@@ -740,6 +875,7 @@ async def predict_lichess_game(
     min_ply: int = Query(
         DEFAULT_MIN_PLY, ge=0, le=100, description="Exclude plies before this from critical-move ranking"
     ),
+    model: RatingModelParam = Query(DEFAULT_MODEL_ID, description="Rating model: 'main' (default) or 'gap_weighted'"),
 ):
     """Fetch a Lichess game by ID or URL and receive per-move ratings, suspicion scores, and critical moves."""
     try:
@@ -748,7 +884,8 @@ async def predict_lichess_game(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     cache_key = _stable_cache_key(
-        "lichess", game_id, str(request.white_baseline), str(request.black_baseline), str(top_k), str(min_ply)
+        "lichess", game_id, str(request.white_baseline), str(request.black_baseline), str(top_k), str(min_ply),
+        model,
     )
     if cache_key in RESULT_CACHE:
         return RESULT_CACHE[cache_key]
@@ -758,10 +895,10 @@ async def predict_lichess_game(
     except LichessError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    result = _run_inference_or_422(pgn_text, request.white_baseline, request.black_baseline, top_k, min_ply)
+    result = _run_inference_or_422(pgn_text, request.white_baseline, request.black_baseline, top_k, min_ply, model)
     result["lichess_game_id"] = game_id
 
-    _log_prediction({"source": "lichess", "game_id": game_id, "cache_key": cache_key, **result})
+    _log_prediction({"source": "lichess", "game_id": game_id, "cache_key": cache_key, "model_id": model, **result})
     response = {"status": "ok", **result}
     _cache_put(cache_key, response)
     return response

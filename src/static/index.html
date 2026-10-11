@@ -238,6 +238,16 @@
         </details>
       </div>
 
+      <div class="card rating-model-row" id="rating-model-row">
+        <label for="rating-model-select" class="suspicion-method-term">Rating model</label>
+        <select id="rating-model-select" class="suspicion-method-select">
+          <option value="main" selected>Main model (as reported)</option>
+          <option value="gap_weighted">Gap-weighted</option>
+        </select>
+        <button type="button" class="info-icon" data-info-key="ratingModel" aria-label="What is the rating model choice?">i</button>
+        <span id="rating-model-unavailable" class="chip chip-warn" hidden>Not available on this server</span>
+      </div>
+
       <div id="live-status-panel" class="card live-status-panel" hidden>
         <span class="live-dot" id="live-dot" aria-hidden="true"></span>
         <span id="live-status-text" class="live-status-text"></span>
@@ -263,6 +273,9 @@
           <span id="suspicion-baseline-warning" class="chip chip-warn" hidden>Self-estimated baseline <button type="button" class="info-icon" data-info-key="baseline" aria-label="What is the baseline?">i</button></span>
           <span id="suspicion-label-provisional" class="chip chip-warn" hidden>Provisional cutoffs <button type="button" class="info-icon" data-info-key="suspicionProvisional" aria-label="What does provisional mean here?">i</button></span>
           <button type="button" class="info-icon" id="suspicion-label-info" data-info-key="suspicionLabel" aria-label="What do these labels mean?">i</button>
+        </div>
+        <div id="suspicion-gap-weighted-caveat" class="suspicion-method-row" hidden>
+          <span class="card-subtle">The detectors below were calibrated on the main model, not this one.</span>
         </div>
         <div class="suspicion-method-row">
           <label for="suspicion-method-select" class="suspicion-method-term">Method</label>
