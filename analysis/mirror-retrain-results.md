@@ -14,9 +14,10 @@ Philippine time, 2026-10-11):
 1. The corpus store at `/tmp/ratingnet_store` was missing (a prior reboot had
    wiped it). Rebuilt it from `data/corpus_store_backup.sqlite` and placed
    `data/split_manifest_2p55M_seed42.json` as `split_manifest.json`, exactly
-   as the pre-registration describes. This took about a minute, not the 41
-   minutes the pre-registration estimates; the store is apparently cheaper to
-   restore than planned for.
+   as the pre-registration describes. This took about 70 seconds this time
+   (06:10:33 to 06:11:42); an earlier restore of the same 11 GB file, logged
+   by the watchdog on 2026-09-30, took about 7 minutes, so the time this step
+   needs varies with what else the HPC's disk cache is holding.
 2. Scored each arm's best-validation checkpoint (and, for the same
    epoch-60 record kept alongside every other arm, its epoch-60 checkpoint)
    on the frozen 255,000-game test partition with
@@ -62,9 +63,11 @@ miss in the sense the pre-registration anticipated: a different training
 seed could plausibly have put this arm on the other side of zero. The
 pass/fail call stands as written (FAIL, the CI does not cross zero on this
 run), but it should not be read as a wide or decisive margin. Arm A's pass
-is comfortably assigned (the whole CI sits below zero) but the effect size,
-0.4088 MAE points, is also on the order of that same seed-to-seed noise, so
-it is a real but modest improvement, not a large one.
+is comfortably assigned by the letter of the rule (the whole CI sits below
+zero), but the same scope caveat applies to it symmetrically: an effect
+size of 0.4088 MAE points is on the order of that same seed-to-seed noise,
+so the result is distinguishable from test-set resampling noise but not
+shown to exceed seed-to-seed training variance.
 
 ## Criterion (b): wide-gap games improve
 
