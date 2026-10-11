@@ -1,0 +1,41 @@
+{
+  "n_games": 3000,
+  "median_abs_final_wb_overall": 16.239250000000084,
+  "median_abs_parity_free_wb_overall": 14.511100000000056,
+  "by_bucket": {
+    "non_ultrabullet": {
+      "n_games": 2965,
+      "median_abs_final_wb": 16.007000000000062,
+      "median_abs_parity_free_wb": 14.366149999999948,
+      "by_last_mover": {
+        "white": {
+          "n_games": 1282,
+          "median_final_wb_signed": 9.718350000000044,
+          "mean_final_wb_signed": 15.318885491419657
+        },
+        "black": {
+          "n_games": 1683,
+          "median_final_wb_signed": -10.778600000000097,
+          "mean_final_wb_signed": -17.785074093879977
+        }
+      }
+    },
+    "ultrabullet": {
+      "n_games": 35,
+      "median_abs_final_wb": 106.57709999999997,
+      "median_abs_parity_free_wb": 71.82010000000002,
+      "by_last_mover": {
+        "white": {
+          "n_games": 21,
+          "median_final_wb_signed": 95.03909999999996,
+          "mean_final_wb_signed": 107.53687142857146
+        },
+        "black": {
+          "n_games": 14,
+          "median_final_wb_signed": -115.75815,
+          "mean_final_wb_signed": -119.38490714285716
+        }
+      }
+    }
+  }
+}

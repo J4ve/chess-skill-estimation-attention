@@ -196,21 +196,32 @@ def main():
         if we is None or be is None:
             continue
         sw_f, sb_f = c["served"]["live_white"][n - 1], c["served"]["live_black"][n - 1]
+        mw, mb = c["mirror_arm_a_gapweight"]["live_white"], c["mirror_arm_a_gapweight"]["live_black"]
+        mirror_final_wb = mw[n - 1] - mb[n - 1]
+        # Parity-free: mean of W-B over the last two plies, which (since the
+        # last-mover artifact below flips sign by mover) cancels one
+        # White-just-moved upswing against one Black-just-moved downswing
+        # when n >= 2.
+        mirror_parity_free = (
+            (mw[n - 1] - mb[n - 1] + mw[n - 2] - mb[n - 2]) / 2.0 if n >= 2 else mirror_final_wb
+        )
         final_rows.append(
             dict(
                 game_id=gid,
                 n_plies=n,
+                last_mover="white" if n % 2 == 1 else "black",
+                tc_bucket=tc_bucket(c.get("time_control")),
                 white_elo=float(we),
                 black_elo=float(be),
                 served_white_final=sw_f,
                 served_black_final=sb_f,
                 served_gap=abs(sw_f - sb_f),
-                mirror_white_final=c["mirror_arm_a_gapweight"]["live_white"][n - 1],
-                mirror_black_final=c["mirror_arm_a_gapweight"]["live_black"][n - 1],
-                mirror_gap=abs(
-                    c["mirror_arm_a_gapweight"]["live_white"][n - 1]
-                    - c["mirror_arm_a_gapweight"]["live_black"][n - 1]
-                ),
+                mirror_white_final=mw[n - 1],
+                mirror_black_final=mb[n - 1],
+                mirror_final_wb=mirror_final_wb,
+                mirror_gap=abs(mirror_final_wb),
+                mirror_parity_free_wb=mirror_parity_free,
+                mirror_parity_free_gap=abs(mirror_parity_free),
             )
         )
     fdf = pd.DataFrame(final_rows)
@@ -218,6 +229,43 @@ def main():
     print("median served_gap:", fdf["served_gap"].median())
     print("median mirror_gap:", fdf["mirror_gap"].median())
     print("n games with elo:", len(fdf))
+
+    # Last-mover parity diagnostic for mirror_arm_a's final-ply gap: does the
+    # final W-B's sign track who moved last (the same artifact the per-ply
+    # regression finds), and how much of the raw gap survives a parity
+    # correction? Written to a small committed JSON since the full
+    # final_per_game.csv is not committed.
+    def median_abs(series):
+        return float(series.abs().median()) if len(series) else None
+
+    parity = {
+        "n_games": int(len(fdf)),
+        "median_abs_final_wb_overall": median_abs(fdf["mirror_final_wb"]),
+        "median_abs_parity_free_wb_overall": median_abs(fdf["mirror_parity_free_wb"]),
+        "by_bucket": {},
+    }
+    for label, sub in [
+        ("non_ultrabullet", fdf[fdf["tc_bucket"] != "ultrabullet"]),
+        ("ultrabullet", fdf[fdf["tc_bucket"] == "ultrabullet"]),
+    ]:
+        entry = {
+            "n_games": int(len(sub)),
+            "median_abs_final_wb": median_abs(sub["mirror_final_wb"]),
+            "median_abs_parity_free_wb": median_abs(sub["mirror_parity_free_wb"]),
+            "by_last_mover": {},
+        }
+        for mover in ["white", "black"]:
+            s2 = sub[sub["last_mover"] == mover]
+            if len(s2):
+                entry["by_last_mover"][mover] = {
+                    "n_games": int(len(s2)),
+                    "median_final_wb_signed": float(s2["mirror_final_wb"].median()),
+                    "mean_final_wb_signed": float(s2["mirror_final_wb"].mean()),
+                }
+        parity["by_bucket"][label] = entry
+    with open("final_gap_parity_diagnostics.json", "w") as f:
+        json.dump(parity, f, indent=2)
+    print("Wrote final_gap_parity_diagnostics.json")
 
 
 if __name__ == "__main__":

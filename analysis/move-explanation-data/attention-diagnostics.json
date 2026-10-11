@@ -311,7 +311,7 @@
     "configured_depth": 17,
     "n_total": 191059,
     "n_at_configured_depth": 190361,
-    "n_short_terminal_checkmate_or_stalemate": 685,
+    "n_short_terminal_checkmate": 685,
     "n_short_nonterminal_time_cap": 13,
     "fraction_at_configured_depth": 0.9963466782512208,
     "fraction_short_explained_by_terminal_positions": 0.9813753581661891

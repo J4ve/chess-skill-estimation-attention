@@ -232,22 +232,45 @@ def main():
     results["ply_gt_10_only"] = {"n_rows": int(len(df_timed_minply)), "by_arm": minply_results}
 
     # Robustness, part 2: decided positions only (|eval before move| < 700
-    # cp), on the SAME timed subset as the headline, so this is directly
-    # comparable to the headline's -0.188 / -0.075 coefficients rather than
-    # the separate, larger scored-sample figures reported alongside it.
-    df_timed_decided = df_timed[df_timed["eval_before"].abs() < 700].copy()
+    # cp), on the SAME ply-11+ timed subset the headline uses (not the
+    # all-plies timed subset), so this is directly comparable to the
+    # headline's -0.105 / -0.077 coefficients.
+    df_minply_decided = df_timed_minply[df_timed_minply["eval_before"].abs() < 700].copy()
     decided_results = {}
     for arm, resp_prefix in [("served", "served"), ("mirror_arm_a_gapweight", "mirror")]:
         arm_decided = {}
         for response in ["mean", "own_minus_opp"]:
             y_col = f"delta_{response}_{resp_prefix}"
-            m1 = cluster_bootstrap_ols(df_timed_decided, y_col, lambda d: build_design(d, include_time=False))
+            m1 = cluster_bootstrap_ols(df_minply_decided, y_col, lambda d: build_design(d, include_time=False))
             arm_decided[response] = m1
+            print(
+                f"[ply>10, decided] {arm} {response}: cp_loss_sqrt="
+                f"{m1['coefficients']['cp_loss_sqrt']['point']:.5f}",
+                flush=True,
+            )
         decided_results[arm] = arm_decided
-    results["decided_positions_timed_sample"] = {
-        "n_rows": int(len(df_timed_decided)),
+    results["decided_positions_ply_gt_10"] = {
+        "n_rows": int(len(df_minply_decided)),
         "by_arm": decided_results,
     }
+
+    # Sensitivity check: does the cp_loss coefficient keep moving past
+    # ply 10, or has it settled? Point estimate only (500 resamples) on
+    # served/mean and mirror_arm_a/own_minus_opp, the two headline
+    # responses; not reported as a primary number, only to check stability.
+    df_timed_gt20 = df_timed[df_timed["ply"] > 20].copy()
+    sensitivity = {}
+    for arm, resp_prefix, response in [
+        ("served", "served", "mean"),
+        ("mirror_arm_a_gapweight", "mirror", "own_minus_opp"),
+    ]:
+        y_col = f"delta_{response}_{resp_prefix}"
+        m1 = cluster_bootstrap_ols(
+            df_timed_gt20, y_col, lambda d: build_design(d, include_time=False), n_resamples=500
+        )
+        sensitivity[f"{arm}:{response}"] = m1["coefficients"]["cp_loss_sqrt"]
+        print(f"[ply>20] {arm} {response}: cp_loss_sqrt={m1['coefficients']['cp_loss_sqrt']}", flush=True)
+    results["ply_gt_20_sensitivity_check"] = {"n_rows": int(len(df_timed_gt20)), "cp_loss_sqrt": sensitivity}
 
     with open("regression_results.json", "w") as f:
         json.dump(results, f, indent=2)

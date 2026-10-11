@@ -70,13 +70,15 @@ def uniform_baseline_by_ply(curves):
 
 def depth_and_terminal_stats(sf_depth, path="hpc_out/engine_3000.jsonl"):
     """Every position's depth, cross-checked against whether it is a
-    genuinely terminal (checkmate/stalemate) position: depth_before[t] for
+    genuinely terminal (checkmate) position: depth_before[t] for
     t=0..n-1 covers positions 0..n-1; depth_after[-1] is the one additional
     (final) position per game not covered by depth_before. A position short
     of the configured depth is "terminal" here if it is that final position
     AND its eval is mate-magnitude (|eval| >= 9999, the MATE_CP_CLAMP
     boundary): Stockfish correctly returns an exact, zero-search score for a
-    position with no legal moves, which is not a 1-second-cap failure."""
+    position with no legal moves, which is not a 1-second-cap failure. This
+    test only catches checkmates; a stalemate's eval is 0, not mate-magnitude,
+    so a short-depth stalemate would land in the nonterminal count instead."""
     n_total = 0
     n_at_depth = 0
     n_short_terminal = 0
@@ -109,7 +111,7 @@ def depth_and_terminal_stats(sf_depth, path="hpc_out/engine_3000.jsonl"):
     return {
         "n_total": n_total,
         "n_at_configured_depth": n_at_depth,
-        "n_short_terminal_checkmate_or_stalemate": n_short_terminal,
+        "n_short_terminal_checkmate": n_short_terminal,
         "n_short_nonterminal_time_cap": n_short_nonterminal,
         "fraction_at_configured_depth": n_at_depth / n_total if n_total else None,
         "fraction_short_explained_by_terminal_positions": (
@@ -144,8 +146,8 @@ def main():
     print(
         f"stockfish depth: {depth_stats['n_at_configured_depth']}/{depth_stats['n_total']} "
         f"({100*depth_stats['fraction_at_configured_depth']:.4f}%) reached depth {sf_depth}; "
-        f"of the shortfall, {depth_stats['n_short_terminal_checkmate_or_stalemate']} are terminal "
-        f"(checkmate/stalemate) positions and {depth_stats['n_short_nonterminal_time_cap']} are "
+        f"of the shortfall, {depth_stats['n_short_terminal_checkmate']} are terminal "
+        f"(checkmate) positions and {depth_stats['n_short_nonterminal_time_cap']} are "
         "genuine 1-second-cap shortfalls"
     )
     print("Wrote attention_diagnostics.json")
