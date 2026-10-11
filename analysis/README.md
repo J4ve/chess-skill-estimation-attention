@@ -34,8 +34,9 @@ and for adapting, not as a turnkey pipeline.
   deployment latency and offline against live agreement measurements.
 - `move_explanation_curves.py`, `move_explanation_engine.py`,
   `move_explanation_merge.py`, `move_explanation_regression.py`,
-  `move_explanation_case_studies.py`: the move-level explanation of the
-  rating estimate (live per-ply curves against a Stockfish yardstick), see
+  `move_explanation_case_studies.py`,
+  `move_explanation_attention_diagnostics.py`: the move-level explanation of
+  the rating estimate (live per-ply curves against a Stockfish yardstick), see
   `move-explanation-results.md`.
 - `preprocess_fast.py`, `preprocess_onepass.py`, `resume_pass2.py`,
   `scan_equivalence_check.py`, `compare_processed_dirs.py`,

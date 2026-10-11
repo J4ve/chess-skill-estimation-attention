@@ -198,28 +198,56 @@ def main():
             )
         results["by_arm"][arm] = arm_results
 
-    # Robustness: same nested sequence (scored sample), restricted to
-    # ply >= 11 (the project's own critical_moves.DEFAULT_MIN_PLY cutoff,
-    # i.e. ply > 10 one-indexed), since opening swings of hundreds of
-    # points may dominate SS_tot and keep every R^2 tiny regardless of what
-    # is added.
-    df_scored_minply = df_scored[df_scored["ply"] > 10].copy()
+    # Robustness, part 1: the FULL nested M0/M1/M2 sequence (not just
+    # move-quality's own delta-R^2), restricted to ply >= 11 (the project's
+    # own critical_moves.DEFAULT_MIN_PLY cutoff, i.e. ply > 10 one-indexed)
+    # and fit on the SAME timed subset the headline uses, so this is a true
+    # opening-excluded re-run of the headline, not a different-rows partial
+    # check. Opening swings of hundreds of points may otherwise dominate
+    # SS_tot and keep every R^2 tiny regardless of what is added.
+    df_timed_minply = df_timed[df_timed["ply"] > 10].copy()
     minply_results = {}
     for arm, resp_prefix in [("served", "served"), ("mirror_arm_a_gapweight", "mirror")]:
         arm_minply = {}
         for response in ["own", "opp", "mean", "own_minus_opp"]:
             y_col = f"delta_{response}_{resp_prefix}"
-            m0 = cluster_bootstrap_ols(df_scored_minply, y_col, nuisance_design(False), n_resamples=500)
-            m1 = cluster_bootstrap_ols(
-                df_scored_minply, y_col, lambda d: build_design(d, include_time=False), n_resamples=500
-            )
+            m0 = cluster_bootstrap_ols(df_timed_minply, y_col, nuisance_design(False))
+            m1 = cluster_bootstrap_ols(df_timed_minply, y_col, lambda d: build_design(d, include_time=False))
+            m2 = cluster_bootstrap_ols(df_timed_minply, y_col, lambda d: build_design(d, include_time=True))
             arm_minply[response] = {
                 "nuisance_only": m0,
                 "plus_move_quality": m1,
+                "plus_move_quality_and_time": m2,
                 "delta_r2_move_quality": m1["r2"]["point"] - m0["r2"]["point"],
+                "delta_r2_time": m2["r2"]["point"] - m1["r2"]["point"],
             }
+            print(
+                f"[ply>10] {arm} {response}: R2 nuisance={m0['r2']['point']:.5f} "
+                f"+quality={m1['r2']['point']:.5f} +time={m2['r2']['point']:.5f} "
+                f"cp_loss_sqrt={m1['coefficients']['cp_loss_sqrt']['point']:.5f} "
+                f"time_spent={m2['coefficients'].get('time_spent_capped', {}).get('point')}",
+                flush=True,
+            )
         minply_results[arm] = arm_minply
-    results["ply_gt_10_only"] = {"n_rows": int(len(df_scored_minply)), "by_arm": minply_results}
+    results["ply_gt_10_only"] = {"n_rows": int(len(df_timed_minply)), "by_arm": minply_results}
+
+    # Robustness, part 2: decided positions only (|eval before move| < 700
+    # cp), on the SAME timed subset as the headline, so this is directly
+    # comparable to the headline's -0.188 / -0.075 coefficients rather than
+    # the separate, larger scored-sample figures reported alongside it.
+    df_timed_decided = df_timed[df_timed["eval_before"].abs() < 700].copy()
+    decided_results = {}
+    for arm, resp_prefix in [("served", "served"), ("mirror_arm_a_gapweight", "mirror")]:
+        arm_decided = {}
+        for response in ["mean", "own_minus_opp"]:
+            y_col = f"delta_{response}_{resp_prefix}"
+            m1 = cluster_bootstrap_ols(df_timed_decided, y_col, lambda d: build_design(d, include_time=False))
+            arm_decided[response] = m1
+        decided_results[arm] = arm_decided
+    results["decided_positions_timed_sample"] = {
+        "n_rows": int(len(df_timed_decided)),
+        "by_arm": decided_results,
+    }
 
     with open("regression_results.json", "w") as f:
         json.dump(results, f, indent=2)

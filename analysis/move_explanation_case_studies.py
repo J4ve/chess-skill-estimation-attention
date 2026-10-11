@@ -205,8 +205,8 @@ def make_figure(gid, case, out_path, title_label):
     ax3.set_ylabel("Attention wt.")
     ax3.set_xlabel("Ply")
     ax3.set_title(
-        f"Attention weight (shaded: ply < {MIN_PLY_FOR_CRITICAL}, mechanically front-loaded, "
-        "excluded from critical-move ranking)",
+        f"Full-game attention weight (shaded: ply < {MIN_PLY_FOR_CRITICAL}, partly "
+        "mechanically front-loaded, excluded from critical-move ranking)",
         fontsize=9.5, loc="left",
     )
     ax3.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))

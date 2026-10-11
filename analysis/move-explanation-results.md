@@ -56,9 +56,14 @@ without a second engine call
 (`analysis/move_explanation_engine.py`). Mate scores are capped at 10,000 cp before
 differencing; centipawn loss is capped at 2,000 cp per move. The depth actually
 reached (recorded per position for exactly this reason) hit the full depth 17 at
-188,054 of 188,059 scored positions (99.997%); the remaining 5 stopped one ply
-short at depth 16 under the 1.0-second cap, so "depth 17" in every figure caption
-is accurate for essentially the whole sample.
+190,361 of all 191,059 positions scored, including each game's final position
+(99.63%; `analysis/move_explanation_attention_diagnostics.py`,
+`analysis/move-explanation-data/attention-diagnostics.json`). Of the 698 that did
+not, 685 are a game's own final position with a mate-magnitude evaluation, i.e.
+an actual checkmate or stalemate, where Stockfish correctly returns an exact
+score with no search needed rather than hitting the time cap; only 13 positions
+(0.007% of the sample) are genuine 1-second-cap shortfalls, so "depth 17" in
+every figure caption is accurate for essentially the whole sample.
 
 ## Sample
 
@@ -85,135 +90,164 @@ For every ply after the first, the change in the live estimate from the previous
 ply was regressed on: the ply band (six bands, 1-10 through 81-100), the game's
 time-control bucket, who moved, the square-root of that move's Stockfish centipawn
 loss, the signed White-POV evaluation change caused by the move, and the capped
-time spent on the move. **All three nested models (ply/time-control/mover only;
-plus move quality; plus time spent) are fit on the same 182,066-row subset**, the
-one with a usable time-spent figure (see Limitations), because R-squared is only
-comparable across nested models fit on identical rows: fitting the time-spent
-model on a larger row set than the other two would make its R-squared partly
-reflect the different sample rather than the added predictor, up to and including
-producing a non-monotonic sequence where adding a predictor appears to lower
-R-squared. The 185,058-row full-scored sample
-(2,992 extra rows, exactly the dropped ply-2 of each game) is used only for a
-move-quality-only check reported in `analysis/move-explanation-data/regression-results.json`'s
-`scored_sample` block, which agrees with the headline below. Confidence intervals
-are a 1,000-resample **cluster bootstrap over games**, not over plies: plies
-within a game are not independent, so a per-ply bootstrap or per-ply OLS standard
-error would be far too narrow given roughly 62 plies per game. Four response
-variables are reported per checkpoint: the mover's own estimate change, the
-opponent's, the mean of both, and the own-minus-opponent difference (the one
-response where a per-side effect, if present, would show up most directly).
+time spent on the move. **All three nested models in a comparison (ply/time-
+control/mover only; plus move quality; plus time spent) are always fit on the
+same set of rows**, because R-squared is only comparable across nested models
+fit on identical rows: fitting one model on a larger row set than the others in
+the same comparison would make its R-squared partly reflect the different sample
+rather than the added predictor, up to and including producing a non-monotonic
+sequence where adding a predictor appears to lower R-squared. Three such
+comparisons are reported below, each internally consistent: the full
+182,066-row timed subset (every scored ply from 2 to 100 with a usable
+time-spent figure, see Limitations), the same subset restricted to ply 11 and
+later (158,266 rows, used as the headline, see below), and the 185,058-row full
+scored sample (every scored ply from 2 to 100, 2,992 more rows than the timed
+subset, exactly the dropped ply 2 of each game) used only for a move-quality-only
+check that does not need a time figure. Confidence intervals are a 1,000-resample
+**cluster bootstrap over games**, not over plies: plies within a game are not
+independent, so a per-ply bootstrap or per-ply OLS standard error would be far
+too narrow given roughly 62 plies per game. Four response variables are reported
+per checkpoint: the mover's own estimate change, the opponent's, the mean of
+both, and the own-minus-opponent difference (the one response where a per-side
+effect, if present, would show up most directly).
+
+**The headline number depends materially on whether the opening is included, so
+the opening-excluded (ply 11 and later) version is the primary one reported
+here**, matching this project's own `critical_moves.DEFAULT_MIN_PLY` convention
+of not trusting early-ply signal. On the full 182,066-row timed sample (plies 2
+through 100), the served model's `sqrt(centipawn loss)` coefficient is -0.188;
+restricted to the 158,266 rows at ply 11 and later, fit on the same nested
+sequence, it is -0.105, a 44% smaller but still clearly non-zero effect. Ply 2,
+where the live estimate's single largest ply-to-ply jump typically happens, is
+disproportionately influential in the full-sample number; the ply-11-and-later
+number is the more defensible one for a concrete effect size, and is used below.
+Both are in `analysis/move-explanation-data/regression-results.json`
+(`by_arm.<checkpoint>.<response>.timed_sample_nested` for all plies,
+`ply_gt_10_only.by_arm.<checkpoint>.<response>` for ply 11+).
 
 **Headline: the relationship is real but small, and time spent tracks the live
-estimate somewhat more than engine-measured move quality does.** Adding
-centipawn-loss and signed-eval-change to the ply/time-control/mover baseline moves
-R-squared by 0.0002 to 0.0012 across every response and both checkpoints; adding
-time spent on top moves it by a further 0.0066 to 0.0096 for the own/opponent/mean
-responses, roughly 8 to 12 times the move-quality contribution on the same rows.
-None of this explains much of the live estimate's ply-to-ply movement in absolute
-terms (R-squared stays under 0.025 everywhere except the one response discussed
-below), which is itself the honest finding: most of what moves the live curve from
-one ply to the next is not captured by engine-measured move quality, time spent,
-or coarse game phase.
+estimate more than engine-measured move quality does, more so once the opening
+is excluded.** At ply 11 and later, adding centipawn-loss and signed-eval-change
+to the ply/time-control/mover baseline moves R-squared by 0.0002 to 0.0008 across
+every response and both checkpoints; adding time spent on top moves it by a
+further 0.0101 to 0.0157 for the own/opponent/mean responses, roughly 19 to 60
+times the move-quality contribution on the same rows (the wide range comes from
+one small move-quality effect, `mirror_arm_a`'s opponent response, in the
+denominator). None of this explains much of the live estimate's ply-to-ply
+movement in absolute terms (R-squared stays under 0.035 everywhere except the one
+response discussed below), which is itself the honest finding: most of what moves
+the live curve from one ply to the next, even past the opening, is not captured
+by engine-measured move quality, time spent, or coarse game phase.
 
 | Checkpoint | Response | R2, ply+TC+mover only | R2, + move quality | R2, + time spent |
 | --- | --- | --- | --- | --- |
-| served | own | 0.0054 | 0.0064 | 0.0148 |
-| served | opponent | 0.0054 | 0.0063 | 0.0148 |
-| served | mean | 0.0054 | 0.0064 | 0.0148 |
-| served | own minus opponent | 0.0042 | 0.0044 | 0.0045 |
-| mirror_arm_a | own | 0.0123 | 0.0135 | 0.0231 |
-| mirror_arm_a | opponent | 0.0140 | 0.0145 | 0.0210 |
-| mirror_arm_a | mean | 0.0051 | 0.0060 | 0.0145 |
-| mirror_arm_a | own minus opponent | 0.1372 | 0.1377 | 0.1389 |
+| served | own | 0.0010 | 0.0015 | 0.0133 |
+| served | opponent | 0.0010 | 0.0015 | 0.0133 |
+| served | mean | 0.0010 | 0.0015 | 0.0133 |
+| served | own minus opponent | 0.0018 | 0.0020 | 0.0020 |
+| mirror_arm_a | own | 0.0177 | 0.0185 | 0.0342 |
+| mirror_arm_a | opponent | 0.0153 | 0.0154 | 0.0256 |
+| mirror_arm_a | mean | 0.0009 | 0.0014 | 0.0156 |
+| mirror_arm_a | own minus opponent | 0.1492 | 0.1498 | 0.1512 |
 
-All on the same 182,066-row subset; full coefficients and CIs for every term,
-including this table's, are in
+Ply 11 and later only, same 158,266-row timed subset for all three nested models;
+full coefficients and CIs for every term, including this table's, are in
 `analysis/move-explanation-data/regression-results.json`
-(`by_arm.<checkpoint>.<response>.timed_sample_nested`).
+(`ply_gt_10_only.by_arm.<checkpoint>.<response>`). The all-plies version (the
+same table including the opening) is in the same file under
+`by_arm.<checkpoint>.<response>.timed_sample_nested`.
 
 **Costlier moves do move the estimate down, by a small but statistically
 non-zero amount, and for the served model that movement is shared almost equally
-by both sides.** Holding ply band, time control, and mover fixed, the
-`sqrt(centipawn loss)` coefficient is about -0.188 (95% CI roughly [-0.21, -0.17])
-in the served model's own, opponent, and mean estimate changes alike (the three
-agree to three decimal places): a concrete 400-centipawn blunder
-(`sqrt(400) = 20`) is associated with a fall of about 3.8 rating points, against a
-per-ply standard deviation of about 55 points for the same response. The
-own-minus-opponent version of the same coefficient is -0.00004 (95% CI
-[-0.00013, 0.00007], crossing zero): centipawn loss has **no detectable per-side
-effect at all** for the served model on this response. A costly move moves the
-whole game-level estimate, not one player's estimate
-relative to the other's, exactly what the served model's near-equal White/Black
-estimates would predict.
+by both sides.** Holding ply band, time control, and mover fixed, at ply 11 and
+later the `sqrt(centipawn loss)` coefficient is -0.105 (95% CI [-0.125, -0.085])
+in the served model's own, opponent, and mean estimate changes alike: a concrete
+400-centipawn blunder (`sqrt(400) = 20`) is associated with a fall of about 2.1
+rating points, against a per-ply standard deviation of about 55 points for the
+same response. The own-minus-opponent version of the same coefficient is
+-0.00003 (95% CI [-0.00013, 0.00006], crossing zero): centipawn loss has **no
+detectable per-side effect at all** for the served model on this response, at
+ply 11+ exactly as on the full sample. A costly move moves the whole game-level
+estimate, not one player's estimate relative to the other's, exactly what the
+served model's near-equal White/Black estimates would predict.
 
 **`mirror_arm_a_gapweight`, whose sides do separate, shows a real per-side
-effect that the served model does not.** Its own-minus-opponent coefficient on
-`sqrt(centipawn loss)` is -0.075 (95% CI [-0.11, -0.05], clearing zero): the same
-400-centipawn blunder is associated with the mover's own estimate falling by about
-1.5 points relative to the opponent's, in the expected direction, where the served
-model's own-minus-opponent response shows nothing.
+effect that the served model does not, and this one is stable whether or not the
+opening is included.** Its own-minus-opponent coefficient on
+`sqrt(centipawn loss)` is -0.077 (95% CI [-0.10, -0.04], clearing zero) at
+ply 11+, barely different from -0.075 on the full sample: the same
+400-centipawn blunder is associated with the mover's own estimate falling by
+about 1.5 points relative to the opponent's, in the expected direction, where the
+served model's own-minus-opponent response shows nothing at any ply range tested.
 
-**Time spent on a move tracks the live estimate somewhat more than move quality
+**Time spent on a move tracks the live estimate more strongly than move quality
 does, in the opposite direction from what intuition about "careful play" might
 suggest, and unlike Stockfish, the clock is a real model input.** Holding the
-other covariates fixed, more time spent (capped at 120 seconds) on a move is
-associated with a *fall* in the own, opponent, and mean live estimate for both
-checkpoints, roughly -0.64 to -0.77 rating points per additional capped second
-(every CI excludes zero); ten extra seconds is about -6.6 to -7.7 points, almost
-twice the 400-centipawn-blunder comparison above. Because the model's clock input
-(`clockTime`) is the one yardstick in this note it can actually see, unlike
-Stockfish's evaluation, this is the more direct candidate explanation of the
-three, though still only correlational: one plausible reading, not tested further
-here, is that harder or more unclear positions both take longer to think about and
-coincide with lower estimates for reasons unrelated to the thinking time itself.
+other covariates fixed, at ply 11 and later more time spent (capped at 120
+seconds) on a move is associated with a *fall* in the own, opponent, and mean live
+estimate for both checkpoints, roughly -0.58 to -0.72 rating points per additional
+capped second (every CI excludes zero); ten extra seconds is about -5.8 to -7.2
+points, more than twice the 400-centipawn-blunder comparison above. Because the
+model's clock input (`clockTime`) is the one yardstick in this note it can
+actually see, unlike Stockfish's evaluation, this is the more direct candidate
+explanation of the three, though still only correlational: one plausible reading,
+not tested further here, is that harder or more unclear positions both take
+longer to think about and coincide with lower estimates for reasons unrelated to
+the thinking time itself.
 
-**Robustness: the two headline effects hold, and slightly strengthen, when
-decided positions are excluded, and when the opening is excluded entirely.**
-Restricting to the 163,886 rows with |evaluation before the move| under 700
-centipawns (88.6% of the scored rows), the served model's mean-response
-`sqrt(centipawn loss)` coefficient moves from -0.107 [-0.129, -0.085] to -0.137
-[-0.167, -0.100] (on the full 185,058-row scored sample, not the 182,066-row
-timed one, so not directly comparable to the -0.188 above), and `mirror_arm_a`'s
-own-minus-opponent coefficient moves from -0.083 [-0.114, -0.052] to -0.125
-[-0.156, -0.091]. Full numbers in
-`analysis/move-explanation-data/robustness-decided-subset.json`. Separately,
-restricting to ply 11 and later (158,266 rows, excluding the opening entirely
-rather than only controlling for it) lowers every nuisance-only R-squared, most
-sharply the served model's (0.0054 to 0.0010 for own/opponent/mean), but leaves
-move quality's own small marginal contribution essentially unchanged (delta-R2
-0.0002 to 0.0008 across responses and checkpoints): the opening's volatility
-inflates the ply-band baseline's own explanatory power, not move quality's
-contribution on top of it.
-(`analysis/move-explanation-data/regression-results.json`'s `ply_gt_10_only`
-block.)
+**Robustness: the two headline effects hold, and strengthen, when decided
+positions are excluded.** Restricting the 182,066-row timed sample to the
+160,894 rows with |evaluation before the move| under 700 centipawns (88.4%),
+fit on the same nested sequence (all plies, not additionally restricted to
+ply 11+), the served model's mean-response `sqrt(centipawn loss)` coefficient
+moves from -0.188 [-0.210, -0.166] to -0.275 [-0.308, -0.242], and
+`mirror_arm_a`'s own-minus-opponent coefficient moves from -0.075 [-0.106,
+-0.046] to -0.113 [-0.145, -0.079]; the served own-minus-opponent coefficient
+stays at essentially zero (-0.00001, CI crossing zero). Full numbers in
+`analysis/move-explanation-data/regression-results.json`
+(`decided_positions_timed_sample`).
 
 **Game phase**, used here as the ply band plus a material-based opening/
 middlegame/endgame split in the engine pass, is folded into the baseline model
 above rather than treated as a free-standing predictor: it is confounded with ply
-by construction, and the baseline model's own small R-squared values (0.004 to
-0.014 across responses, before move quality or time are added) already show that
+by construction, and the baseline model's own small R-squared values (0.0009 to
+0.0177 at ply 11+, before move quality or time are added) already show that
 knowing only the ply band, time control, and who moved explains little of the
 estimate's ply-to-ply movement on its own.
 
-**Why `mirror_arm_a`'s own-minus-opponent nuisance R-squared (0.137) is so much
+**Why `mirror_arm_a`'s own-minus-opponent R-squared (0.137 to 0.149) is so much
 larger than every other cell in the table** is itself worth reporting rather than
-leaving as an unexplained outlier: two covariates in that nuisance-only model
-carry essentially all of it. The `tc_bucket=ultrabullet` coefficient is +100.8
-(95% CI [85.1, 115.0]), a very large shift confined to a very small, unusual
-sample (1,666 of 185,058 scored rows, 34 of 2,992 games, mean own-minus-opponent
-change about +105 per row and consistent across those 34 games, not one outlier
-game). The `mover=white` coefficient is a smaller but still clearly non-zero
--1.33 (95% CI [-1.40, -1.26]): arm A's own-minus-opponent change averages about
-1.3 points lower on White's moves than on Black's, holding ply and time control
-fixed, a genuine but small mover-parity effect. Both sit in the nuisance model
-the move-quality and time-spent terms are added on top of, which is why they do
-not change the headline comparisons above, but they are the honest answer to
-"why is this one cell so much bigger."
+leaving as an unexplained outlier, and the answer is a genuine, if small,
+**last-mover artifact, not a stable per-player signal**: across the whole sample,
+`mirror_arm_a`'s own-minus-opponent change averages +4.6 when White just moved
+and +5.9 when Black just moved (the served model's equivalent is -0.007 and
+-0.005, indistinguishable from zero). Because "own" always means "the side that
+just moved," a positive mean in both cases means whichever side moves most
+recently gets a small, temporary relative bump that the next move (by the other
+side) reverses; it is not that White is rated higher than Black, since the effect
+flips which color it favors every ply. This ordinary-time-control effect
+(+4.6 to +5.9 rating points) is then massively amplified in a small,
+unusual bucket: `tc_bucket=ultrabullet` rows average +105 (1,666 of 185,058
+scored rows, 34 of 2,992 games, consistent across those 34 games, not one
+outlier game; a single ultrabullet game's own sequential own-minus-opponent
+values alternate sign by mover almost every ply, confirming the same artifact at
+much larger amplitude). Both sit in the nuisance model the move-quality and
+time-spent terms are added on top of (as the `mover_white` and
+`tc_bucket=ultrabullet` coefficients), which is why they do not change the
+cp_loss-coefficient headline comparisons above (a per-side cp_loss effect is a
+claim about the *additional* movement a blunder causes beyond this baseline
+oscillation, which the regression already controls for), but they are the
+honest answer to "why is this one cell so much bigger," and a caution against
+reading `mirror_arm_a`'s per-ply own-minus-opponent swings as stable per-player
+skill tracking, as opposed to its final-ply gap (reported above, median 16.2
+points), which is a single end-of-game number this artifact does not touch.
 
 ## A caveat the figures below depend on: attention is partly front-loaded by construction
 
-The served model's attention weight, averaged over 3,000 games, is 0.1486 at ply 1
-and 0.00016 by ply 90, a 909-fold gap (`src/attention.py`'s `forward_causal`:
+Computed by `analysis/move_explanation_attention_diagnostics.py`, written to
+`analysis/move-explanation-data/attention-diagnostics.json`. The served model's
+attention weight, averaged over 3,000 games, is 0.1486 at ply 1 and 0.00016 by
+ply 90, a 909-fold gap (`src/attention.py`'s `forward_causal`:
 `weights[b, t, :]` sums to 1 over valid keys `s <= t`, confirmed by reading the
 code directly for this note). `api.py`'s `attention_weights = ...mean(dim=1)` then
 averages each key's received weight over **all** `T` queries, including the
@@ -281,10 +315,11 @@ engine-measured move quality is a weak driver of the live estimate's movement.
 What does coincide with the curve's movement is ply: the largest swings are in
 the first 10 to 20 plies, where attention (bottom panel) is also at its highest,
 and where the dilution-only baseline from the caveat above predicts most of that
-height. Time spent over plies 1-20 stays in a narrow 1-13 second band (this is a 5-minute,
-no-increment blitz time control) with nothing that stands out as coinciding with
-the largest jumps; the first move of each side (ply 1, ply 2) has no earlier clock to
-diff against and is excluded from this reading. Nothing in this game's early
+height. Time spent over plies 1-20 stays in a narrow 1-13 second band (this is a
+5-minute, no-increment blitz time control) with nothing that stands out as
+coinciding with the largest jumps; the first move of each side (ply 1, ply 2) has
+no earlier clock to diff against and is excluded from this reading. Nothing in
+this game's early
 volatility is clearly attributable to move quality or time spent by this note's
 own predictors; it reads as the recompute mechanism's own early-game noise.
 
@@ -313,10 +348,16 @@ plies 27 and 28: unlike the shaded opening region, this peak is not a constructi
 artifact by the caveat above (past ply 20, observed attention runs at or below the
 dilution-only baseline on the 3,000-game average), so it is a plausible, though
 not proven, case of attention actually tracking a real blunder exchange in this
-one game. That is a different claim from "centipawn loss moves the rating
-estimate," which the aggregate regression's small effect sizes still do not
-support, and the two 189/183-point losses at plies 27-28 do not produce any
-unusual drop in the live curve themselves (the curve keeps climbing through them).
+one game. The attention panel is from the full-game (offline) pass, not the live
+curve: it shows what the *final* ply's recompute, seeing the whole game, looked
+back at, not necessarily what the live estimate used in real time as it climbed
+through plies 18-28, since each of those live points was its own separate
+prefix-recompute pass that could not yet see ply 28. That is a different claim
+from "centipawn loss moves the rating estimate," which the aggregate regression's
+small effect sizes still do not support, and the two 189/183-point losses at
+plies 27-28 do not produce any unusual drop in the live curve themselves (the
+curve keeps climbing through them); the peak attention at ply 28 does not drive
+the ply 18-28 climb that already happened by the time it is measured.
 Time spent across plies 17-31 (a 3-minute-plus-2-second blitz time control) stays
 in an ordinary 1-15 second range with no value that stands out as explaining the
 climb; the largest single jumps in this window (such as +197 points at ply 18 and
@@ -348,9 +389,10 @@ swings in both games here, is not explained by either.
   studies (see `Ke6`/`Rb3` above) more than the regression, where the centipawn-loss
   cap binds for 2.1% of scored plies and the evaluation (mate) cap for 4.4%.
 - **Stockfish search depth is a race against a 1-second-per-position cap**, not a
-  guaranteed fixed depth, though it reached depth 17 at 99.997% of scored
-  positions in this sample (see Method); this note does not further stratify by
-  the 5 positions that stopped one ply short.
+  guaranteed fixed depth, though it reached depth 17 at 99.63% of all scored
+  positions, and the near-totality of the shortfall is genuine checkmate/stalemate
+  terminal positions, not time-cap failures (see Method); this note does not
+  further stratify by the 13 positions that are genuine shortfalls.
 - **Attention weight, read only past ply 10 per the caveat above**, is still a
   property of one trained checkpoint's one attention mechanism, not a general
   claim about what "matters" in a position, and the aggregate regression above
@@ -381,9 +423,9 @@ HPC work ran under `~/thesis2/scratch/move_explain/` (not `~` itself), on GPU 2
 watchdog's `--experiment` substring match could not mistake this analysis run for
 a training run. This repository's `src/` (at commit `8c7f23f`) was copied to
 `~/thesis2/scratch/move_explain/src_snapshot/src`, and
-`move_explanation_curves.py`, `move_explanation_engine.py` and
-`sample_test_games.py` to `~/thesis2/scratch/move_explain/scripts/`. Commands,
-run from `~/thesis2`:
+`move_explanation_curves.py`, `move_explanation_engine.py`,
+`sample_test_games.py` and `run_move_explanation.sh` to
+`~/thesis2/scratch/move_explain/scripts/`. Commands, run from `~/thesis2`:
 
 ```
 python3 scratch/move_explain/scripts/sample_test_games.py \
@@ -403,4 +445,6 @@ used below, not committed, same convention as this repository's other large
 per-game CSVs), `analysis/move_explanation_regression.py` (reads
 `merged_per_ply.csv` from the same directory; the bootstrap regression above),
 `analysis/move_explanation_case_studies.py` (reads `hpc_out/` directly; selects
-the two games and renders the figures and per-ply JSON in this note).
+the two games and renders the figures and per-ply JSON in this note),
+`analysis/move_explanation_attention_diagnostics.py` (reads `hpc_out/` directly;
+the attention-front-loading caveat's numbers above).
