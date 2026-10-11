@@ -152,8 +152,15 @@ own training.
 **Live mode.** The menu is disabled while a live stream is active: Live's
 curve is a frozen, move-by-move prefix run (see "Prefix-estimate semantics"
 below), and re-running it under a different model mid-stream isn't
-supported. Switching before starting a live session, or after loading a
-finished live game's full analysis, works normally.
+supported. A live stream itself always uses the main model regardless of
+what the selector shows: it never requests `gap_weighted`, so selecting
+Gap-weighted and then starting a live session does not apply it, and the
+chart/suspicion wording for a live result always reads as main (both are
+driven by the server response, not the selector, precisely so a stale or
+inapplicable selection can never mislabel what's actually on screen).
+Switching after loading a finished live game's **full analysis** (the
+non-live, re-run view) works normally, since that is an ordinary
+`/predict/lichess` request like any other.
 
 ## Suspicion score
 

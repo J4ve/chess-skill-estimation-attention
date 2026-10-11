@@ -297,6 +297,13 @@ const state = {
   ratingModel: DEFAULT_RATING_MODEL,
   ratingModelAvailable: { main: true, gap_weighted: true }, // refined by GET /health at init
   lastAnalysisRequest: null, // {kind: "pgn"|"lichess", pgn?, gameId?, baselines, topK, minPly, sampleMeta?}
+  // Bumped by every top-level "load a game into the main view" action
+  // (submitAnalysis, loadAndAnalyzeSample, rerunCurrentAnalysisWithModel,
+  // loadFullGameAnalysisForLiveGame); a response is rendered only if its
+  // captured seq still matches, so a slow response (e.g. a model switch
+  // that's much slower than the cached default) can never overwrite a
+  // newer request's result.
+  analysisRequestSeq: 0,
   boardInView: true,
   live: {
     active: false,
@@ -844,6 +851,7 @@ function renderSamplesGrid(samples) {
 async function loadAndAnalyzeSample(sample, cardEl) {
   clearError();
   stopLiveStream({ silent: true });
+  const seq = bumpAnalysisRequestSeq();
   const topK = currentTopK();
   const minPly = currentMinPly();
   const grid = $("samples-grid");
@@ -865,6 +873,7 @@ async function loadAndAnalyzeSample(sample, cardEl) {
       throw new Error(await parseErrorDetail(response));
     }
     const result = await response.json();
+    if (seq !== state.analysisRequestSeq) return; // superseded by a newer request; drop silently
     state.lastAnalysisRequest = {
       kind: "pgn",
       pgn: pgnText,
@@ -875,7 +884,7 @@ async function loadAndAnalyzeSample(sample, cardEl) {
     };
     renderResult(result, { sampleMeta: sample });
   } catch (err) {
-    showError(err.message || String(err));
+    if (seq === state.analysisRequestSeq) showError(err.message || String(err));
   } finally {
     grid.classList.remove("loading");
     if (cardEl) cardEl.removeAttribute("aria-busy");
@@ -910,9 +919,15 @@ function ratingModelQuerySuffix() {
   return state.ratingModel === GAP_WEIGHTED_MODEL_ID ? `&model=${GAP_WEIGHTED_MODEL_ID}` : "";
 }
 
+function bumpAnalysisRequestSeq() {
+  state.analysisRequestSeq += 1;
+  return state.analysisRequestSeq;
+}
+
 async function submitAnalysis() {
   clearError();
   stopLiveStream({ silent: true });
+  const seq = bumpAnalysisRequestSeq();
   const topK = currentTopK();
   const minPly = currentMinPly();
   const baselines = currentBaselines();
@@ -970,18 +985,22 @@ async function submitAnalysis() {
       lastRequest = { kind: "lichess", gameId, baselines, topK, minPly };
     }
   } catch (networkErr) {
+    if (seq !== state.analysisRequestSeq) return; // superseded; a newer request owns the error/loading state now
     showError(`Could not reach the API: ${networkErr.message}`);
     setLoading(false);
     return;
   }
 
   if (!response.ok) {
-    showError(await parseErrorDetail(response));
+    const detail = await parseErrorDetail(response);
+    if (seq !== state.analysisRequestSeq) return;
+    showError(detail);
     setLoading(false);
     return;
   }
 
   const result = await response.json();
+  if (seq !== state.analysisRequestSeq) return; // superseded by a newer request; drop silently, leave loading state to it
   setLoading(false);
   state.lastAnalysisRequest = lastRequest;
   renderResult(result);
@@ -993,6 +1012,7 @@ async function rerunCurrentAnalysisWithModel() {
   const req = state.lastAnalysisRequest;
   if (!req) return;
   clearError();
+  const seq = bumpAnalysisRequestSeq();
   setLoading(true);
   const query = `top_k=${req.topK}&min_ply=${req.minPly}${ratingModelQuerySuffix()}`;
   let response;
@@ -1011,18 +1031,22 @@ async function rerunCurrentAnalysisWithModel() {
       });
     }
   } catch (networkErr) {
+    if (seq !== state.analysisRequestSeq) return; // superseded; a newer request owns loading/selection state now
     showError(`Could not reach the API: ${networkErr.message}`);
     setLoading(false);
     revertRatingModelSelection();
     return;
   }
   if (!response.ok) {
-    showError(await parseErrorDetail(response));
+    const detail = await parseErrorDetail(response);
+    if (seq !== state.analysisRequestSeq) return;
+    showError(detail);
     setLoading(false);
     revertRatingModelSelection();
     return;
   }
   const result = await response.json();
+  if (seq !== state.analysisRequestSeq) return; // superseded by a newer request (another switch, or a fresh load); drop silently
   setLoading(false);
   renderResult(result, { sampleMeta: req.sampleMeta || null });
 }
@@ -1052,6 +1076,16 @@ function onRatingModelChange(modelId) {
   }
   state.ratingModel = modelId;
   if (state.play.active) {
+    // Invalidate any request already in flight (or merely debounced) for the
+    // model just switched away from, exactly like undo/reset: otherwise a
+    // slow pre-switch response could land after the new one and repaint the
+    // board under the new model's label with the old model's data.
+    state.play.requestSeq += 1;
+    if (state.play.abortController) state.play.abortController.abort();
+    if (state.play.debounceTimer) {
+      clearTimeout(state.play.debounceTimer);
+      state.play.debounceTimer = null;
+    }
     schedulePlayAnalysis();
     return;
   }
@@ -1456,7 +1490,10 @@ function renderSuspicion(result) {
   const available = Boolean(entry && entry.available);
   $("suspicion-method-unavailable").hidden = available;
   $("suspicion-section").dataset.method = state.suspicionMethod;
-  $("suspicion-gap-weighted-caveat").hidden = state.ratingModel !== GAP_WEIGHTED_MODEL_ID;
+  // Derived from the response actually on screen, not the current selector
+  // value: a slow rerun (or a model switch while an older response is still
+  // in flight) must never show a label that doesn't match the rendered data.
+  $("suspicion-gap-weighted-caveat").hidden = result.rating_model !== GAP_WEIGHTED_MODEL_ID;
 
   $("suspicion-baseline-warning").hidden = ![result.white_baseline_source, result.black_baseline_source].includes(
     "self_prediction_fallback"
@@ -1739,8 +1776,9 @@ function renderChart(result) {
   // The main model's two outputs are nearly one shared function of the game
   // (see METRIC_INFO.ratingCurvesOverlap); the gap-weighted arm is trained
   // specifically so they don't share that property, so the caveat no longer
-  // applies under it.
-  const independenceSuffix = state.ratingModel === GAP_WEIGHTED_MODEL_ID ? "" : " (not independent)";
+  // applies under it. Derived from the response itself, like the suspicion
+  // caveat above, so the legend always matches the data actually plotted.
+  const independenceSuffix = result.rating_model === GAP_WEIGHTED_MODEL_ID ? "" : " (not independent)";
 
   const datasets = [
     {
@@ -2737,6 +2775,7 @@ function setupLiveNetworkEvents() {
 async function loadFullGameAnalysisForLiveGame() {
   if (!state.live.gameId) return;
   clearError();
+  const seq = bumpAnalysisRequestSeq();
   const topK = currentTopK();
   const minPly = currentMinPly();
   $("live-status-text").textContent = "Loading full analysis...";
@@ -2753,6 +2792,7 @@ async function loadFullGameAnalysisForLiveGame() {
       throw new Error(await parseErrorDetail(response));
     }
     const result = await response.json();
+    if (seq !== state.analysisRequestSeq) return; // superseded by a newer request; drop silently
     closeLiveEventSourceQuietly();
     state.lastAnalysisRequest = {
       kind: "lichess",
@@ -2763,7 +2803,7 @@ async function loadFullGameAnalysisForLiveGame() {
     };
     renderResult(result);
   } catch (err) {
-    showError(err.message || String(err));
+    if (seq === state.analysisRequestSeq) showError(err.message || String(err));
   }
 }
 
