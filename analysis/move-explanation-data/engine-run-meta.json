@@ -1,0 +1,10 @@
+{
+  "stockfish_id": {
+    "name": "Stockfish 16",
+    "author": "the Stockfish developers (see AUTHORS file)"
+  },
+  "sf_depth": 17,
+  "sf_time_cap_s": 1.0,
+  "n_games": 3000,
+  "n_errors": 0
+}

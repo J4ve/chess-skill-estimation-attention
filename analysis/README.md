@@ -32,6 +32,11 @@ and for adapting, not as a turnkey pipeline.
   these under `experiments/`.
 - `deploy_measure.py`, `sample_test_games.py`, `slow_file_server.py`: the
   deployment latency and offline against live agreement measurements.
+- `move_explanation_curves.py`, `move_explanation_engine.py`,
+  `move_explanation_merge.py`, `move_explanation_regression.py`,
+  `move_explanation_case_studies.py`: the move-level explanation of the
+  rating estimate (live per-ply curves against a Stockfish yardstick), see
+  `move-explanation-results.md`.
 - `preprocess_fast.py`, `preprocess_onepass.py`, `resume_pass2.py`,
   `scan_equivalence_check.py`, `compare_processed_dirs.py`,
   `check_corpus_store.py`, `gen_py_random_vectors.py`: the corpus
@@ -43,10 +48,11 @@ and for adapting, not as a turnkey pipeline.
   manuscript figures.
 
 - `run_heldout_test_eval.sh`, `run_v2_rating_cheap.sh`, `run_v2_engine.sh`,
-  `extra_arms_launch.sh`, `extra_arms_run.sh`: the shell runners that drove
-  the scripts above on the cluster. `test_pipeline_recovery.sh` is different
-  in kind: it exercises the corpus driver's claim, staleness and crash
-  recovery paths for real, including `SIGKILL`, without downloading a month.
+  `extra_arms_launch.sh`, `extra_arms_run.sh`, `run_move_explanation.sh`: the
+  shell runners that drove the scripts above on the cluster.
+  `test_pipeline_recovery.sh` is different in kind: it exercises the corpus
+  driver's claim, staleness and crash recovery paths for real, including
+  `SIGKILL`, without downloading a month.
 
 Note that these documents and runners refer to the scripts by their path in
 the private repository, `analysis/scripts/<name>.py`. Here they are flat, at
@@ -81,7 +87,7 @@ Where to start depends on the question:
   `stage2-tuning-preregistration.md`, `stage2-sweep-results.md`,
   `stage2-sweep-methodology-audit.md`, `lr3e4-5seed-confirmation-results.md`,
   `heldout-test-eval-results.md`, `bot-account-error-check.md`,
-  `deployment-measurements.md`.
+  `deployment-measurements.md`, `move-explanation-results.md`.
 - Synthetic anomaly corpora and detectors: `anomaly-corpus-pilot.md`,
   `anomaly-corpus-generated.md`, `anomaly-corpus-v2-notes.md`,
   `anomaly-clock-synthesis-plan.md`, `anomaly-clock-review.md`,

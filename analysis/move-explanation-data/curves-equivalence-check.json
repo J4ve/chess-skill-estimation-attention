@@ -1,0 +1,182 @@
+[
+  {
+    "game_id": "2019-01_game_0002813.pkl",
+    "max_abs_diff": 0.00479999999993197,
+    "checks": [
+      {
+        "ply": 1,
+        "api_white": 1746.84,
+        "own_white": 1746.8363,
+        "white_abs_diff": 0.0036999999999807187,
+        "api_black": 1746.47,
+        "own_black": 1746.4741,
+        "black_abs_diff": 0.0040999999998803105
+      },
+      {
+        "ply": 2,
+        "api_white": 1549.69,
+        "own_white": 1549.6864,
+        "white_abs_diff": 0.0036000000000058208,
+        "api_black": 1548.93,
+        "own_black": 1548.9282,
+        "black_abs_diff": 0.0018000000000029104
+      },
+      {
+        "ply": 10,
+        "api_white": 1875.54,
+        "own_white": 1875.54,
+        "white_abs_diff": 0.0,
+        "api_black": 1875.51,
+        "own_black": 1875.5099,
+        "black_abs_diff": 9.999999997489795e-05
+      },
+      {
+        "ply": 20,
+        "api_white": 1877.55,
+        "own_white": 1877.546,
+        "white_abs_diff": 0.0039999999999054126,
+        "api_black": 1877.56,
+        "own_black": 1877.5552,
+        "black_abs_diff": 0.00479999999993197
+      },
+      {
+        "ply": 30,
+        "api_white": 1698.01,
+        "own_white": 1698.0077,
+        "white_abs_diff": 0.0022999999998774,
+        "api_black": 1697.72,
+        "own_black": 1697.7208,
+        "black_abs_diff": 0.0008000000000265572
+      },
+      {
+        "ply": 41,
+        "api_white": 1652.75,
+        "own_white": 1652.7512,
+        "white_abs_diff": 0.001199999999926149,
+        "api_black": 1652.35,
+        "own_black": 1652.3473,
+        "black_abs_diff": 0.0027000000000043656
+      }
+    ]
+  },
+  {
+    "game_id": "2019-01_game_0002851.pkl",
+    "max_abs_diff": 0.0048000000001593435,
+    "checks": [
+      {
+        "ply": 1,
+        "api_white": 1703.28,
+        "own_white": 1703.277,
+        "white_abs_diff": 0.0029999999999290594,
+        "api_black": 1702.87,
+        "own_black": 1702.8667,
+        "black_abs_diff": 0.0032999999998537533
+      },
+      {
+        "ply": 2,
+        "api_white": 1676.33,
+        "own_white": 1676.328,
+        "white_abs_diff": 0.0019999999999527063,
+        "api_black": 1675.85,
+        "own_black": 1675.8512,
+        "black_abs_diff": 0.0012000000001535227
+      },
+      {
+        "ply": 25,
+        "api_white": 2141.09,
+        "own_white": 2141.094,
+        "white_abs_diff": 0.0039999999999054126,
+        "api_black": 2142.16,
+        "own_black": 2142.1648,
+        "black_abs_diff": 0.0048000000001593435
+      },
+      {
+        "ply": 50,
+        "api_white": 2036.69,
+        "own_white": 2036.6881,
+        "white_abs_diff": 0.0018999999999778083,
+        "api_black": 2037.45,
+        "own_black": 2037.4514,
+        "black_abs_diff": 0.001399999999875945
+      },
+      {
+        "ply": 75,
+        "api_white": 2013.37,
+        "own_white": 2013.3684,
+        "white_abs_diff": 0.0015999999998257408,
+        "api_black": 2014.08,
+        "own_black": 2014.0844,
+        "black_abs_diff": 0.004400000000032378
+      },
+      {
+        "ply": 100,
+        "api_white": 2010.33,
+        "own_white": 2010.3291,
+        "white_abs_diff": 0.0009000000000014552,
+        "api_black": 2011.05,
+        "own_black": 2011.0504,
+        "black_abs_diff": 0.00040000000012696546
+      }
+    ]
+  },
+  {
+    "game_id": "2019-01_game_0002947.pkl",
+    "max_abs_diff": 0.004999999999881766,
+    "checks": [
+      {
+        "ply": 1,
+        "api_white": 1451.48,
+        "own_white": 1451.4767,
+        "white_abs_diff": 0.003300000000081127,
+        "api_black": 1450.34,
+        "own_black": 1450.3429,
+        "black_abs_diff": 0.002900000000181535
+      },
+      {
+        "ply": 2,
+        "api_white": 1596.3,
+        "own_white": 1596.295,
+        "white_abs_diff": 0.004999999999881766,
+        "api_black": 1595.84,
+        "own_black": 1595.8397,
+        "black_abs_diff": 0.00029999999992469384
+      },
+      {
+        "ply": 16,
+        "api_white": 1762.31,
+        "own_white": 1762.3137,
+        "white_abs_diff": 0.0036999999999807187,
+        "api_black": 1762.12,
+        "own_black": 1762.1183,
+        "black_abs_diff": 0.0016999999998006388
+      },
+      {
+        "ply": 33,
+        "api_white": 1907.5,
+        "own_white": 1907.4956,
+        "white_abs_diff": 0.004400000000032378,
+        "api_black": 1907.77,
+        "own_black": 1907.7722,
+        "black_abs_diff": 0.002200000000129876
+      },
+      {
+        "ply": 50,
+        "api_white": 1941.46,
+        "own_white": 1941.4626,
+        "white_abs_diff": 0.0026000000000294676,
+        "api_black": 1941.88,
+        "own_black": 1941.8783,
+        "black_abs_diff": 0.0017000000000280124
+      },
+      {
+        "ply": 67,
+        "api_white": 1940.65,
+        "own_white": 1940.6495,
+        "white_abs_diff": 0.0005000000001018634,
+        "api_black": 1941.04,
+        "own_black": 1941.0371,
+        "black_abs_diff": 0.0028999999999541615
+      }
+    ]
+  }
+]
