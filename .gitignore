@@ -10,6 +10,9 @@ data/*.csv
 data/*.jsonl
 data/*.pkl
 
+# Per-game error CSVs from score_test_split.py: large (~20MB each), regenerable
+analysis/heldout_test_eval/*.csv
+
 # Runtime artifacts
 .venv/
 .bin/

@@ -1,0 +1,32 @@
+{
+  "n_resamples": 10000,
+  "seed": 12345,
+  "pairs": {
+    "mirror_arm_a_vs_attn_tuned": {
+      "point_delta_mae": -0.4087906262745098,
+      "ci95_lo": -0.7253795925490196,
+      "ci95_hi": -0.08847561450980392,
+      "ci_crosses_zero": false,
+      "frac_resamples_A_better": 0.9936,
+      "frac_resamples_B_better": 0.0064,
+      "n_games": 255000,
+      "A": "analysis/heldout_test_eval/mirror_arm_a__best.csv",
+      "B": "analysis/heldout_test_eval/attn_tuned__best.csv",
+      "mae_A": 171.5079854717647,
+      "mae_B": 171.9167760980392
+    },
+    "mirror_arm_b_vs_attn_tuned": {
+      "point_delta_mae": 0.3556100476470588,
+      "ci95_lo": 0.04325651627450978,
+      "ci95_hi": 0.6693956262745098,
+      "ci_crosses_zero": false,
+      "frac_resamples_A_better": 0.0123,
+      "frac_resamples_B_better": 0.9877,
+      "n_games": 255000,
+      "A": "analysis/heldout_test_eval/mirror_arm_b__best.csv",
+      "B": "analysis/heldout_test_eval/attn_tuned__best.csv",
+      "mae_A": 172.27238614568628,
+      "mae_B": 171.9167760980392
+    }
+  }
+}
