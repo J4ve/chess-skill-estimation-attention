@@ -1829,8 +1829,7 @@ function renderChart(result) {
       layout: { padding: { top: 0, right: 4 } },
       plugins: {
         legend: {
-          position: "top",
-          align: "end",
+          ...chartLegendPlacement(document.querySelector(".chart-canvas-wrap")),
           labels: { color: palette.text, boxWidth: 18, boxHeight: 2, padding: 12, font: tickFont },
         },
         tooltip: {
@@ -1857,6 +1856,40 @@ function renderChart(result) {
     },
     plugins: [buildSyncPlugin(palette)],
   });
+  setupChartLegendResize();
+}
+
+// Below this container width, a top-right legend wraps onto enough lines
+// that it reaches into .chart-title's absolutely-positioned corner (see
+// AGENTS.md); moving the legend to the bottom keeps it physically separate
+// from the title at any width instead of chasing wrap behavior.
+const CHART_LEGEND_NARROW_MAX = 700;
+
+function chartLegendPlacement(containerEl) {
+  const width = containerEl ? containerEl.getBoundingClientRect().width : 0;
+  if (width > 0 && width < CHART_LEGEND_NARROW_MAX) {
+    return { position: "bottom", align: "center" };
+  }
+  return { position: "top", align: "end" };
+}
+
+let chartLegendResizeObserver = null;
+
+function setupChartLegendResize() {
+  if (chartLegendResizeObserver) return;
+  const wrap = document.querySelector(".chart-canvas-wrap");
+  if (!wrap || typeof ResizeObserver === "undefined") return;
+  chartLegendResizeObserver = new ResizeObserver(() => {
+    if (!state.chart) return;
+    const placement = chartLegendPlacement(wrap);
+    const legend = state.chart.options.plugins.legend;
+    if (legend.position !== placement.position || legend.align !== placement.align) {
+      legend.position = placement.position;
+      legend.align = placement.align;
+      state.chart.update();
+    }
+  });
+  chartLegendResizeObserver.observe(wrap);
 }
 
 function jumpFromChartEvent(evt) {
