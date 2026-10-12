@@ -1818,6 +1818,7 @@ function renderChart(result) {
     state.chart.destroy();
   }
   const tickFont = { size: 12 };
+  const legendPlacement = chartLegendPlacement(document.querySelector(".chart-canvas-wrap"));
   state.chart = new window.Chart(ctx, {
     type: "line",
     data: { labels, datasets },
@@ -1826,10 +1827,11 @@ function renderChart(result) {
       maintainAspectRatio: false,
       animation: false,
       interaction: { mode: "index", intersect: false },
-      layout: { padding: { top: 0, right: 4 } },
+      layout: { padding: { top: legendPlacement.topPadding, right: 4 } },
       plugins: {
         legend: {
-          ...chartLegendPlacement(document.querySelector(".chart-canvas-wrap")),
+          position: legendPlacement.position,
+          align: legendPlacement.align,
           labels: { color: palette.text, boxWidth: 18, boxHeight: 2, padding: 12, font: tickFont },
         },
         tooltip: {
@@ -1862,15 +1864,27 @@ function renderChart(result) {
 // Below this container width, a top-right legend wraps onto enough lines
 // that it reaches into .chart-title's absolutely-positioned corner (see
 // AGENTS.md); moving the legend to the bottom keeps it physically separate
-// from the title at any width instead of chasing wrap behavior.
+// from the title at any width instead of chasing wrap behavior. With the
+// legend no longer on top, nothing else reserves room for the title there,
+// so the plot area (its top axis tick in particular) needs an explicit
+// layout.padding.top clearing the title's own rendered box in that case.
 const CHART_LEGEND_NARROW_MAX = 700;
+
+function chartTitleClearance() {
+  const canvas = $("rating-chart");
+  const title = document.querySelector(".chart-title");
+  if (!canvas || !title) return 0;
+  const canvasTop = canvas.getBoundingClientRect().top;
+  const titleBottom = title.getBoundingClientRect().bottom;
+  return Math.max(0, Math.ceil(titleBottom - canvasTop) + 10);
+}
 
 function chartLegendPlacement(containerEl) {
   const width = containerEl ? containerEl.getBoundingClientRect().width : 0;
   if (width > 0 && width < CHART_LEGEND_NARROW_MAX) {
-    return { position: "bottom", align: "center" };
+    return { position: "bottom", align: "center", topPadding: chartTitleClearance() };
   }
-  return { position: "top", align: "end" };
+  return { position: "top", align: "end", topPadding: 0 };
 }
 
 let chartLegendResizeObserver = null;
@@ -1883,9 +1897,15 @@ function setupChartLegendResize() {
     if (!state.chart) return;
     const placement = chartLegendPlacement(wrap);
     const legend = state.chart.options.plugins.legend;
-    if (legend.position !== placement.position || legend.align !== placement.align) {
+    const layoutPadding = state.chart.options.layout.padding;
+    const changed =
+      legend.position !== placement.position ||
+      legend.align !== placement.align ||
+      layoutPadding.top !== placement.topPadding;
+    if (changed) {
       legend.position = placement.position;
       legend.align = placement.align;
+      layoutPadding.top = placement.topPadding;
       state.chart.update();
     }
   });
