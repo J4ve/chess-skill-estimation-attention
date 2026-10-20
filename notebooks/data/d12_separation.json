@@ -1,0 +1,122 @@
+{
+ "what": "How far the two per-side estimates separate, against the real rating gap, for the served arm and the gap-weighted arm.",
+ "statistic": "Each side's predicted rating is its stated rating plus the signed error recorded in the per-game dump. 'split' is the median predicted gap multiplied by the sign of the real gap, so a split pointing the wrong way subtracts. 'error' is the mean of the two sides' absolute errors.",
+ "sources": [
+  "analysis/heldout_test_eval/attn_tuned__best.csv",
+  "analysis/heldout_test_eval/mirror_arm_a__best.csv (HPC)",
+  "CCS Thesis - Integrated/chapters/chapter4.tex"
+ ],
+ "n_games": 255000,
+ "overall": {
+  "main": {
+   "mae": 171.92,
+   "median_split": 0.71,
+   "signed_correlation": 0.001,
+   "wide_gap_mae": 276.78
+  },
+  "gapweight": {
+   "mae": 171.51,
+   "median_split": 15.67,
+   "signed_correlation": 0.389,
+   "wide_gap_mae": 246.98
+  }
+ },
+ "bands": [
+  {
+   "lo": 0,
+   "hi": 50,
+   "band": "0 to 50",
+   "n_games": 157353,
+   "main_split": 0.0,
+   "main_error": 160.54,
+   "gapweight_split": 0.06,
+   "gapweight_error": 162.24
+  },
+  {
+   "lo": 50,
+   "hi": 100,
+   "band": "50 to 100",
+   "n_games": 51567,
+   "main_split": 0.01,
+   "main_error": 172.94,
+   "gapweight_split": 2.37,
+   "gapweight_error": 173.29
+  },
+  {
+   "lo": 100,
+   "hi": 200,
+   "band": "100 to 200",
+   "n_games": 27837,
+   "main_split": 0.01,
+   "main_error": 187.6,
+   "gapweight_split": 6.15,
+   "gapweight_error": 186.37
+  },
+  {
+   "lo": 200,
+   "hi": 300,
+   "band": "200 to 300",
+   "n_games": 7699,
+   "main_split": -0.02,
+   "main_error": 197.25,
+   "gapweight_split": 17.35,
+   "gapweight_error": 192.0
+  },
+  {
+   "lo": 300,
+   "hi": 500,
+   "band": "300 to 500",
+   "n_games": 7041,
+   "main_split": 0.02,
+   "main_error": 237.65,
+   "gapweight_split": 33.93,
+   "gapweight_error": 218.71
+  },
+  {
+   "lo": 500,
+   "hi": 800,
+   "band": "500 to 800",
+   "n_games": 2849,
+   "main_split": -0.01,
+   "main_error": 324.05,
+   "gapweight_split": 57.29,
+   "gapweight_error": 279.0
+  },
+  {
+   "lo": 800,
+   "hi": null,
+   "band": "800 or more",
+   "n_games": 654,
+   "main_split": -0.03,
+   "main_error": 492.1,
+   "gapweight_split": 92.42,
+   "gapweight_error": 411.89
+  }
+ ],
+ "direction": [
+  {
+   "threshold": 300,
+   "n_games": 10544,
+   "main_right_direction": 50.4,
+   "gapweight_right_direction": 82.4
+  },
+  {
+   "threshold": 500,
+   "n_games": 3503,
+   "main_right_direction": 49.6,
+   "gapweight_right_direction": 87.6
+  },
+  {
+   "threshold": 600,
+   "n_games": 1970,
+   "main_right_direction": 49.4,
+   "gapweight_right_direction": 89.5
+  },
+  {
+   "threshold": 800,
+   "n_games": 654,
+   "main_right_direction": 49.5,
+   "gapweight_right_direction": 91.4
+  }
+ ]
+}

@@ -1,0 +1,109 @@
+{
+ "what": "How long one move takes to score end to end, measured on 100 matched test-split games.",
+ "sources": [
+  "analysis/deployment_measurements/latency_agreement_gpu_a5000.json",
+  "analysis/deployment_measurements/latency_agreement_cpu_xeon4309y.json",
+  "analysis/deployment-measurements.md"
+ ],
+ "measured_plies_note": "Latency was recorded at three game lengths, ply 10, 50 and 100, not continuously, so those three are the only points shown.",
+ "cpu_caveat": "The CPU arm is a server processor, not a laptop, so treat it as an upper bound on available compute.",
+ "budget_reference": [
+  {
+   "name": "Bullet, 60+0",
+   "seconds_per_move": 1.2,
+   "note": "60 seconds over about 50 moves per side."
+  },
+  {
+   "name": "Blitz, 300+3",
+   "seconds_per_move": 6.0,
+   "note": "300 seconds over about 50 moves per side."
+  }
+ ],
+ "agreement_note": "The live path and offline batch scoring agree exactly at the final ply, to 0.0 rating points on both devices. Per-ply values diverge mid-game by construction, because the offline pass reads the whole game through a bidirectional LSTM.",
+ "devices": [
+  {
+   "label": "GPU",
+   "hardware": "NVIDIA RTX A5000, 24 GB",
+   "device_name": "NVIDIA RTX A5000",
+   "n_games": 100,
+   "overall": {
+    "n": 6731,
+    "mean_ms": 3.4186,
+    "p50_ms": 3.2125,
+    "p95_ms": 5.4621,
+    "p99_ms": 7.8105,
+    "min_ms": 1.7408,
+    "max_ms": 11.1848
+   },
+   "at_ply": [
+    {
+     "ply": 10,
+     "mean_ms": 2.1882,
+     "p50_ms": 2.1364,
+     "p95_ms": 2.2833,
+     "p99_ms": 3.0588,
+     "n": 100
+    },
+    {
+     "ply": 50,
+     "mean_ms": 3.8003,
+     "p50_ms": 3.7888,
+     "p95_ms": 3.9607,
+     "p99_ms": 4.0771,
+     "n": 75
+    },
+    {
+     "ply": 100,
+     "mean_ms": 5.9165,
+     "p50_ms": 5.8992,
+     "p95_ms": 6.2574,
+     "p99_ms": 6.3906,
+     "n": 16
+    }
+   ],
+   "final_ply_agreement_max_abs_diff": 0.0
+  },
+  {
+   "label": "CPU only",
+   "hardware": "Two Intel Xeon Silver 4309Y at 2.80 GHz, 16 cores and 32 threads in total",
+   "device_name": "Intel(R) Xeon(R) Silver 4309Y CPU @ 2.80GHz",
+   "n_games": 100,
+   "overall": {
+    "n": 6731,
+    "mean_ms": 7.7304,
+    "p50_ms": 8.6011,
+    "p95_ms": 11.9409,
+    "p99_ms": 13.2601,
+    "min_ms": 1.7613,
+    "max_ms": 126.0215
+   },
+   "at_ply": [
+    {
+     "ply": 10,
+     "mean_ms": 5.3116,
+     "p50_ms": 6.5235,
+     "p95_ms": 8.3798,
+     "p99_ms": 9.3454,
+     "n": 100
+    },
+    {
+     "ply": 50,
+     "mean_ms": 8.1105,
+     "p50_ms": 9.7519,
+     "p95_ms": 10.7429,
+     "p99_ms": 10.9972,
+     "n": 75
+    },
+    {
+     "ply": 100,
+     "mean_ms": 12.9978,
+     "p50_ms": 13.0368,
+     "p95_ms": 14.3106,
+     "p99_ms": 14.7583,
+     "n": 16
+    }
+   ],
+   "final_ply_agreement_max_abs_diff": 0.0
+  }
+ ]
+}

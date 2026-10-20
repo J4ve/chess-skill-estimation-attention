@@ -1,0 +1,79 @@
+{
+ "what": "How 2,550,000 Lichess games became the training corpus.",
+ "sources": [
+  "analysis/heldout_test_eval/corpus_composition.json",
+  "CCS Thesis - Integrated/chapters/chapter4.tex (realized corpus composition by time control)",
+  "CCS Thesis - Integrated/chapters/chapter3.tex (sampling and split)",
+  "chapter3-4-process.md (the built store's measured size)",
+  "analysis/corpus-storage-solution.md (compact store design)"
+ ],
+ "n_games": 2550000,
+ "per_month": 30000,
+ "n_months": 85,
+ "window": "January 2019 to July 2026, with February through July 2024 held out for a separate 170,000-game subset",
+ "max_plies": 100,
+ "overall_pct_truncated": 14.3045,
+ "by_time_control": [
+  {
+   "name": "ultrabullet",
+   "count": 30612,
+   "pct_of_corpus": 1.2005,
+   "pct_truncated": 3.8482
+  },
+  {
+   "name": "bullet",
+   "count": 907410,
+   "pct_of_corpus": 35.5847,
+   "pct_truncated": 10.6316
+  },
+  {
+   "name": "blitz",
+   "count": 1217922,
+   "pct_of_corpus": 47.7616,
+   "pct_truncated": 16.7985
+  },
+  {
+   "name": "rapid",
+   "count": 362343,
+   "pct_of_corpus": 14.2095,
+   "pct_truncated": 16.0503
+  },
+  {
+   "name": "classical",
+   "count": 31713,
+   "pct_of_corpus": 1.2436,
+   "pct_truncated": 13.7609
+  }
+ ],
+ "split": {
+  "train_pct": 72,
+  "val_pct": 18,
+  "test_pct": 10,
+  "n_test_games": 255000,
+  "random_state": 42,
+  "note": "A nested 90/10 then 80/20 game-level random split, matching the reference implementation. The split does not deduplicate by player."
+ },
+ "eligibility": [
+  "Standard chess, so no variant games.",
+  "Rated, which the archive records in the game's Event header.",
+  "Both players carry a numeric rating in the headers.",
+  "A real-time control written as base plus increment, which drops correspondence games and malformed entries.",
+  "At least one move, and a clock annotation on every move up to the 100-ply cap, so the clock input is never guessed."
+ ],
+ "eligibility_source": "prototype/src/preprocess_lichess.py, is_eligible and has_full_clocks",
+ "after_the_filters": "A game that clears all five enters the month's reservoir. Only its first 100 plies are stored, which is truncation rather than exclusion.",
+ "reservoir": {
+  "k": 30000,
+  "note": "Uniform reservoir sampling over each full monthly archive, so every eligible game of that month has the same chance of being kept no matter when in the month it was played. The animation is an illustration of the rule, not a replay of a real month.",
+  "citation": "Vitter 1985, random sampling with a reservoir"
+ },
+ "storage": {
+  "store_bytes": 11494612992,
+  "compact_store_gb": 11.5,
+  "compact_store_gib": 10.7,
+  "loose_pickles_gb": 500,
+  "ratio": 26,
+  "format": "SQLite blobs, zlib compressed per game",
+  "note": "The built store measures 11,494,612,992 bytes, verified byte-identical against its backup copy on 2026-08-27. The same corpus as loose pickle files is about 500 GB, which does not fit the cluster's 318 GB scratch disk. Chess position tensors are mostly zeros, which is why they compress so far."
+ }
+}

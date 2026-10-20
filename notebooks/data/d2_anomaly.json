@@ -1,0 +1,1382 @@
+{
+ "what": "Measured anomaly-detection results, and the parameters of the bell-curve picture used to give the reader intuition.",
+ "sources": [
+  "CCS Thesis - Integrated/chapters/chapter4.tex (tables: supervised detector by substitution rate; sequence and end-to-end detectors; player-level aggregation)",
+  "analysis/a3-player-level-results.md (max aggregation, strength check)"
+ ],
+ "post_hoc_note": "The player-level aggregation of the sequence detector was not in the dated analysis plan. It was requested after that detector's per-game result was known, so it shows how an already strong score aggregates rather than confirming a prediction made in advance.",
+ "synthetic_note": "Every anomaly number here comes from synthetic games: Maia bots with planted engine moves. No real cheating accounts were available, so real-world accuracy is unknown.",
+ "k_values": [
+  1,
+  5,
+  10,
+  20,
+  50,
+  100
+ ],
+ "player_level_mean": {
+  "seen": [
+   [
+    0.693,
+    0.683,
+    0.707
+   ],
+   [
+    0.794,
+    0.78,
+    0.812
+   ],
+   [
+    0.827,
+    0.808,
+    0.844
+   ],
+   [
+    0.848,
+    0.827,
+    0.873
+   ],
+   [
+    0.878,
+    0.848,
+    0.906
+   ],
+   [
+    0.902,
+    0.86,
+    0.931
+   ]
+  ],
+  "withheld_band": [
+   [
+    0.696,
+    0.686,
+    0.712
+   ],
+   [
+    0.806,
+    0.791,
+    0.818
+   ],
+   [
+    0.837,
+    0.822,
+    0.852
+   ],
+   [
+    0.862,
+    0.846,
+    0.881
+   ],
+   [
+    0.893,
+    0.87,
+    0.914
+   ],
+   [
+    0.915,
+    0.888,
+    0.938
+   ]
+  ],
+  "withheld_rate": [
+   [
+    0.594,
+    0.582,
+    0.617
+   ],
+   [
+    0.709,
+    0.675,
+    0.729
+   ],
+   [
+    0.779,
+    0.739,
+    0.804
+   ],
+   [
+    0.859,
+    0.813,
+    0.88
+   ],
+   [
+    0.951,
+    0.91,
+    0.963
+   ],
+   [
+    0.987,
+    0.957,
+    0.993
+   ]
+  ],
+  "withheld_both": [
+   [
+    0.601,
+    0.59,
+    0.629
+   ],
+   [
+    0.728,
+    0.701,
+    0.754
+   ],
+   [
+    0.804,
+    0.773,
+    0.826
+   ],
+   [
+    0.884,
+    0.852,
+    0.905
+   ],
+   [
+    0.967,
+    0.944,
+    0.978
+   ],
+   [
+    0.994,
+    0.982,
+    0.997
+   ]
+  ]
+ },
+ "player_level_max": {
+  "seen": [
+   0.693,
+   0.733,
+   0.741,
+   0.747,
+   0.761,
+   0.766
+  ],
+  "withheld_band": [
+   0.696,
+   0.753,
+   0.764,
+   0.772,
+   0.784,
+   0.786
+  ],
+  "withheld_rate": [
+   0.594,
+   0.653,
+   0.661,
+   0.658,
+   0.678,
+   0.683
+  ],
+  "withheld_both": [
+   0.601,
+   0.672,
+   0.685,
+   0.717,
+   0.753,
+   0.776
+  ]
+ },
+ "hard_negative_mean": {
+  "seen": [
+   0.533,
+   0.554,
+   0.568,
+   0.599,
+   0.647,
+   0.706
+  ],
+  "withheld_band": [
+   0.546,
+   0.596,
+   0.632,
+   0.658,
+   0.746,
+   0.82
+  ]
+ },
+ "substitution_rates_pct": [
+  2,
+  5,
+  20,
+  40,
+  60
+ ],
+ "by_substitution_rate": {
+  "detector": {
+   "seen": [
+    [
+     0.542,
+     0.525,
+     0.554
+    ],
+    [
+     0.551,
+     0.539,
+     0.565
+    ],
+    [
+     0.651,
+     0.64,
+     0.661
+    ],
+    [
+     0.758,
+     0.746,
+     0.77
+    ],
+    [
+     0.809,
+     0.799,
+     0.818
+    ]
+   ],
+   "withheld_band": [
+    [
+     0.539,
+     0.528,
+     0.55
+    ],
+    [
+     0.565,
+     0.556,
+     0.575
+    ],
+    [
+     0.661,
+     0.653,
+     0.67
+    ],
+    [
+     0.761,
+     0.754,
+     0.769
+    ],
+    [
+     0.811,
+     0.804,
+     0.818
+    ]
+   ]
+  },
+  "s_att": {
+   "seen": [
+    [
+     0.497,
+     0.485,
+     0.513
+    ],
+    [
+     0.503,
+     0.492,
+     0.516
+    ],
+    [
+     0.509,
+     0.497,
+     0.521
+    ],
+    [
+     0.507,
+     0.496,
+     0.52
+    ],
+    [
+     0.522,
+     0.509,
+     0.533
+    ]
+   ],
+   "withheld_band": [
+    [
+     0.497,
+     0.487,
+     0.508
+    ],
+    [
+     0.492,
+     0.483,
+     0.501
+    ],
+    [
+     0.503,
+     0.494,
+     0.512
+    ],
+    [
+     0.512,
+     0.503,
+     0.52
+    ],
+    [
+     0.52,
+     0.511,
+     0.529
+    ]
+   ]
+  }
+ },
+ "game_level": {
+  "columns": [
+   "Withheld bands",
+   "Withheld rate",
+   "Withheld bands and rate",
+   "Withheld bands, 2%",
+   "Withheld bands, 5%"
+  ],
+  "rows": [
+   {
+    "name": "Summary features (LightGBM), grouped split",
+    "auc": [
+     0.688,
+     0.62,
+     0.649,
+     0.539,
+     0.565
+    ]
+   },
+   {
+    "name": "Sequence (BiGRU), one training run",
+    "auc": [
+     0.752,
+     0.649,
+     0.685,
+     0.576,
+     0.606
+    ]
+   },
+   {
+    "name": "End to end, game-level split",
+    "auc": [
+     0.705,
+     0.626,
+     0.639,
+     0.548,
+     0.571
+    ]
+   }
+  ]
+ },
+ "toy_model": {
+  "D": 0.725,
+  "rho": 0.18,
+  "note": "A bell-curve picture tuned so that a player who always cheats roughly follows the sequence detector's measured withheld-band curve. rho is the share of a player's score noise shared across their games, which is why more games help less and less. It is for intuition only and is not a measurement.",
+  "fitted_against": [
+   0.696,
+   0.862
+  ],
+  "fitted_against_k": [
+   1,
+   20
+  ],
+  "known_shortfall": "Tuned on one game and twenty. It undershoots beyond that, giving about 0.88 at both fifty and a hundred games where the measured curve reaches 0.893 and 0.915, because a single shared-noise term cannot reproduce how the real scores keep separating."
+ },
+ "mixed_cheater": {
+  "fracs": [
+   0.1,
+   0.25,
+   0.5,
+   0.75,
+   1.0
+  ],
+  "ks": [
+   1,
+   5,
+   10,
+   20,
+   50,
+   100
+  ],
+  "by_detector": {
+   "sequence": [
+    {
+     "f": 0.1,
+     "k": 1,
+     "auc": 0.7088,
+     "lo": 0.6848,
+     "hi": 0.7122,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 5,
+     "auc": 0.5926,
+     "lo": 0.574,
+     "hi": 0.622,
+     "f_eff": 0.2,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 10,
+     "auc": 0.57,
+     "lo": 0.5355,
+     "hi": 0.5987,
+     "f_eff": 0.1,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 20,
+     "auc": 0.5839,
+     "lo": 0.5571,
+     "hi": 0.63,
+     "f_eff": 0.1,
+     "n_cheat_games": 2
+    },
+    {
+     "f": 0.1,
+     "k": 50,
+     "auc": 0.634,
+     "lo": 0.584,
+     "hi": 0.688,
+     "f_eff": 0.1,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.1,
+     "k": 100,
+     "auc": 0.6792,
+     "lo": 0.6067,
+     "hi": 0.7372,
+     "f_eff": 0.1,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 0.25,
+     "k": 1,
+     "auc": 0.7088,
+     "lo": 0.6848,
+     "hi": 0.7122,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.25,
+     "k": 5,
+     "auc": 0.5926,
+     "lo": 0.574,
+     "hi": 0.622,
+     "f_eff": 0.2,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.25,
+     "k": 10,
+     "auc": 0.6866,
+     "lo": 0.6615,
+     "hi": 0.7133,
+     "f_eff": 0.3,
+     "n_cheat_games": 3
+    },
+    {
+     "f": 0.25,
+     "k": 20,
+     "auc": 0.6987,
+     "lo": 0.6781,
+     "hi": 0.7366,
+     "f_eff": 0.25,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.25,
+     "k": 50,
+     "auc": 0.7696,
+     "lo": 0.7338,
+     "hi": 0.8088,
+     "f_eff": 0.26,
+     "n_cheat_games": 13
+    },
+    {
+     "f": 0.25,
+     "k": 100,
+     "auc": 0.804,
+     "lo": 0.757,
+     "hi": 0.8391,
+     "f_eff": 0.25,
+     "n_cheat_games": 25
+    },
+    {
+     "f": 0.5,
+     "k": 1,
+     "auc": 0.7088,
+     "lo": 0.6848,
+     "hi": 0.7122,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.5,
+     "k": 5,
+     "auc": 0.7347,
+     "lo": 0.7231,
+     "hi": 0.7576,
+     "f_eff": 0.6,
+     "n_cheat_games": 3
+    },
+    {
+     "f": 0.5,
+     "k": 10,
+     "auc": 0.759,
+     "lo": 0.7437,
+     "hi": 0.7829,
+     "f_eff": 0.5,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.5,
+     "k": 20,
+     "auc": 0.7934,
+     "lo": 0.7815,
+     "hi": 0.8227,
+     "f_eff": 0.5,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 0.5,
+     "k": 50,
+     "auc": 0.8358,
+     "lo": 0.8142,
+     "hi": 0.8651,
+     "f_eff": 0.5,
+     "n_cheat_games": 25
+    },
+    {
+     "f": 0.5,
+     "k": 100,
+     "auc": 0.8605,
+     "lo": 0.8318,
+     "hi": 0.8884,
+     "f_eff": 0.5,
+     "n_cheat_games": 50
+    },
+    {
+     "f": 0.75,
+     "k": 1,
+     "auc": 0.7088,
+     "lo": 0.6848,
+     "hi": 0.7122,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.75,
+     "k": 5,
+     "auc": 0.7726,
+     "lo": 0.7647,
+     "hi": 0.7941,
+     "f_eff": 0.8,
+     "n_cheat_games": 4
+    },
+    {
+     "f": 0.75,
+     "k": 10,
+     "auc": 0.8114,
+     "lo": 0.8022,
+     "hi": 0.8321,
+     "f_eff": 0.8,
+     "n_cheat_games": 8
+    },
+    {
+     "f": 0.75,
+     "k": 20,
+     "auc": 0.8314,
+     "lo": 0.8219,
+     "hi": 0.8591,
+     "f_eff": 0.75,
+     "n_cheat_games": 15
+    },
+    {
+     "f": 0.75,
+     "k": 50,
+     "auc": 0.8667,
+     "lo": 0.8492,
+     "hi": 0.8933,
+     "f_eff": 0.76,
+     "n_cheat_games": 38
+    },
+    {
+     "f": 0.75,
+     "k": 100,
+     "auc": 0.8902,
+     "lo": 0.8627,
+     "hi": 0.9161,
+     "f_eff": 0.75,
+     "n_cheat_games": 75
+    },
+    {
+     "f": 1.0,
+     "k": 1,
+     "auc": 0.7088,
+     "lo": 0.6848,
+     "hi": 0.7122,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 1.0,
+     "k": 5,
+     "auc": 0.7996,
+     "lo": 0.7907,
+     "hi": 0.8175,
+     "f_eff": 1.0,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 1.0,
+     "k": 10,
+     "auc": 0.8325,
+     "lo": 0.8228,
+     "hi": 0.8514,
+     "f_eff": 1.0,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 1.0,
+     "k": 20,
+     "auc": 0.8539,
+     "lo": 0.8455,
+     "hi": 0.8788,
+     "f_eff": 1.0,
+     "n_cheat_games": 20
+    },
+    {
+     "f": 1.0,
+     "k": 50,
+     "auc": 0.888,
+     "lo": 0.8715,
+     "hi": 0.9128,
+     "f_eff": 1.0,
+     "n_cheat_games": 50
+    },
+    {
+     "f": 1.0,
+     "k": 100,
+     "auc": 0.9136,
+     "lo": 0.8869,
+     "hi": 0.936,
+     "f_eff": 1.0,
+     "n_cheat_games": 100
+    }
+   ],
+   "lightgbm": [
+    {
+     "f": 0.1,
+     "k": 1,
+     "auc": 0.6603,
+     "lo": 0.6324,
+     "hi": 0.6631,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 5,
+     "auc": 0.5676,
+     "lo": 0.5418,
+     "hi": 0.5927,
+     "f_eff": 0.2,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 10,
+     "auc": 0.5517,
+     "lo": 0.5144,
+     "hi": 0.5775,
+     "f_eff": 0.1,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 20,
+     "auc": 0.5663,
+     "lo": 0.5205,
+     "hi": 0.6009,
+     "f_eff": 0.1,
+     "n_cheat_games": 2
+    },
+    {
+     "f": 0.1,
+     "k": 50,
+     "auc": 0.6009,
+     "lo": 0.5303,
+     "hi": 0.6469,
+     "f_eff": 0.1,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.1,
+     "k": 100,
+     "auc": 0.6278,
+     "lo": 0.5424,
+     "hi": 0.6801,
+     "f_eff": 0.1,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 0.25,
+     "k": 1,
+     "auc": 0.6603,
+     "lo": 0.6324,
+     "hi": 0.6631,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.25,
+     "k": 5,
+     "auc": 0.5676,
+     "lo": 0.5418,
+     "hi": 0.5927,
+     "f_eff": 0.2,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.25,
+     "k": 10,
+     "auc": 0.639,
+     "lo": 0.6057,
+     "hi": 0.6628,
+     "f_eff": 0.3,
+     "n_cheat_games": 3
+    },
+    {
+     "f": 0.25,
+     "k": 20,
+     "auc": 0.6519,
+     "lo": 0.6136,
+     "hi": 0.6836,
+     "f_eff": 0.25,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.25,
+     "k": 50,
+     "auc": 0.7158,
+     "lo": 0.6614,
+     "hi": 0.7501,
+     "f_eff": 0.26,
+     "n_cheat_games": 13
+    },
+    {
+     "f": 0.25,
+     "k": 100,
+     "auc": 0.7451,
+     "lo": 0.6831,
+     "hi": 0.7828,
+     "f_eff": 0.25,
+     "n_cheat_games": 25
+    },
+    {
+     "f": 0.5,
+     "k": 1,
+     "auc": 0.6603,
+     "lo": 0.6324,
+     "hi": 0.6631,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.5,
+     "k": 5,
+     "auc": 0.6789,
+     "lo": 0.6601,
+     "hi": 0.7032,
+     "f_eff": 0.6,
+     "n_cheat_games": 3
+    },
+    {
+     "f": 0.5,
+     "k": 10,
+     "auc": 0.7046,
+     "lo": 0.6785,
+     "hi": 0.7256,
+     "f_eff": 0.5,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.5,
+     "k": 20,
+     "auc": 0.746,
+     "lo": 0.7199,
+     "hi": 0.7708,
+     "f_eff": 0.5,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 0.5,
+     "k": 50,
+     "auc": 0.7963,
+     "lo": 0.7587,
+     "hi": 0.8229,
+     "f_eff": 0.5,
+     "n_cheat_games": 25
+    },
+    {
+     "f": 0.5,
+     "k": 100,
+     "auc": 0.8184,
+     "lo": 0.7799,
+     "hi": 0.8471,
+     "f_eff": 0.5,
+     "n_cheat_games": 50
+    },
+    {
+     "f": 0.75,
+     "k": 1,
+     "auc": 0.6603,
+     "lo": 0.6324,
+     "hi": 0.6631,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.75,
+     "k": 5,
+     "auc": 0.7188,
+     "lo": 0.6987,
+     "hi": 0.7392,
+     "f_eff": 0.8,
+     "n_cheat_games": 4
+    },
+    {
+     "f": 0.75,
+     "k": 10,
+     "auc": 0.7648,
+     "lo": 0.746,
+     "hi": 0.785,
+     "f_eff": 0.8,
+     "n_cheat_games": 8
+    },
+    {
+     "f": 0.75,
+     "k": 20,
+     "auc": 0.7926,
+     "lo": 0.7702,
+     "hi": 0.8149,
+     "f_eff": 0.75,
+     "n_cheat_games": 15
+    },
+    {
+     "f": 0.75,
+     "k": 50,
+     "auc": 0.83,
+     "lo": 0.8012,
+     "hi": 0.8548,
+     "f_eff": 0.76,
+     "n_cheat_games": 38
+    },
+    {
+     "f": 0.75,
+     "k": 100,
+     "auc": 0.8473,
+     "lo": 0.8146,
+     "hi": 0.8736,
+     "f_eff": 0.75,
+     "n_cheat_games": 75
+    },
+    {
+     "f": 1.0,
+     "k": 1,
+     "auc": 0.6603,
+     "lo": 0.6324,
+     "hi": 0.6631,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 1.0,
+     "k": 5,
+     "auc": 0.7486,
+     "lo": 0.7307,
+     "hi": 0.7669,
+     "f_eff": 1.0,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 1.0,
+     "k": 10,
+     "auc": 0.7908,
+     "lo": 0.7732,
+     "hi": 0.808,
+     "f_eff": 1.0,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 1.0,
+     "k": 20,
+     "auc": 0.8172,
+     "lo": 0.7995,
+     "hi": 0.8396,
+     "f_eff": 1.0,
+     "n_cheat_games": 20
+    },
+    {
+     "f": 1.0,
+     "k": 50,
+     "auc": 0.8487,
+     "lo": 0.824,
+     "hi": 0.8713,
+     "f_eff": 1.0,
+     "n_cheat_games": 50
+    },
+    {
+     "f": 1.0,
+     "k": 100,
+     "auc": 0.8651,
+     "lo": 0.8358,
+     "hi": 0.8876,
+     "f_eff": 1.0,
+     "n_cheat_games": 100
+    }
+   ],
+   "s_att": [
+    {
+     "f": 0.1,
+     "k": 1,
+     "auc": 0.5055,
+     "lo": 0.492,
+     "hi": 0.524,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 5,
+     "auc": 0.4981,
+     "lo": 0.4778,
+     "hi": 0.5263,
+     "f_eff": 0.2,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 10,
+     "auc": 0.4996,
+     "lo": 0.4713,
+     "hi": 0.5321,
+     "f_eff": 0.1,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.1,
+     "k": 20,
+     "auc": 0.4988,
+     "lo": 0.4631,
+     "hi": 0.5388,
+     "f_eff": 0.1,
+     "n_cheat_games": 2
+    },
+    {
+     "f": 0.1,
+     "k": 50,
+     "auc": 0.5001,
+     "lo": 0.4439,
+     "hi": 0.5543,
+     "f_eff": 0.1,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.1,
+     "k": 100,
+     "auc": 0.5066,
+     "lo": 0.4325,
+     "hi": 0.5662,
+     "f_eff": 0.1,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 0.25,
+     "k": 1,
+     "auc": 0.5055,
+     "lo": 0.492,
+     "hi": 0.524,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.25,
+     "k": 5,
+     "auc": 0.4981,
+     "lo": 0.4778,
+     "hi": 0.5263,
+     "f_eff": 0.2,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.25,
+     "k": 10,
+     "auc": 0.5057,
+     "lo": 0.4782,
+     "hi": 0.5353,
+     "f_eff": 0.3,
+     "n_cheat_games": 3
+    },
+    {
+     "f": 0.25,
+     "k": 20,
+     "auc": 0.5017,
+     "lo": 0.4688,
+     "hi": 0.5437,
+     "f_eff": 0.25,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.25,
+     "k": 50,
+     "auc": 0.5117,
+     "lo": 0.4534,
+     "hi": 0.5618,
+     "f_eff": 0.26,
+     "n_cheat_games": 13
+    },
+    {
+     "f": 0.25,
+     "k": 100,
+     "auc": 0.5153,
+     "lo": 0.4451,
+     "hi": 0.5751,
+     "f_eff": 0.25,
+     "n_cheat_games": 25
+    },
+    {
+     "f": 0.5,
+     "k": 1,
+     "auc": 0.5055,
+     "lo": 0.492,
+     "hi": 0.524,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.5,
+     "k": 5,
+     "auc": 0.5034,
+     "lo": 0.485,
+     "hi": 0.5338,
+     "f_eff": 0.6,
+     "n_cheat_games": 3
+    },
+    {
+     "f": 0.5,
+     "k": 10,
+     "auc": 0.5082,
+     "lo": 0.4818,
+     "hi": 0.5403,
+     "f_eff": 0.5,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 0.5,
+     "k": 20,
+     "auc": 0.5123,
+     "lo": 0.4776,
+     "hi": 0.5526,
+     "f_eff": 0.5,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 0.5,
+     "k": 50,
+     "auc": 0.5223,
+     "lo": 0.4674,
+     "hi": 0.5741,
+     "f_eff": 0.5,
+     "n_cheat_games": 25
+    },
+    {
+     "f": 0.5,
+     "k": 100,
+     "auc": 0.5287,
+     "lo": 0.4592,
+     "hi": 0.5912,
+     "f_eff": 0.5,
+     "n_cheat_games": 50
+    },
+    {
+     "f": 0.75,
+     "k": 1,
+     "auc": 0.5055,
+     "lo": 0.492,
+     "hi": 0.524,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 0.75,
+     "k": 5,
+     "auc": 0.5066,
+     "lo": 0.4894,
+     "hi": 0.5394,
+     "f_eff": 0.8,
+     "n_cheat_games": 4
+    },
+    {
+     "f": 0.75,
+     "k": 10,
+     "auc": 0.5177,
+     "lo": 0.4876,
+     "hi": 0.548,
+     "f_eff": 0.8,
+     "n_cheat_games": 8
+    },
+    {
+     "f": 0.75,
+     "k": 20,
+     "auc": 0.5209,
+     "lo": 0.4873,
+     "hi": 0.5617,
+     "f_eff": 0.75,
+     "n_cheat_games": 15
+    },
+    {
+     "f": 0.75,
+     "k": 50,
+     "auc": 0.5335,
+     "lo": 0.4792,
+     "hi": 0.5863,
+     "f_eff": 0.76,
+     "n_cheat_games": 38
+    },
+    {
+     "f": 0.75,
+     "k": 100,
+     "auc": 0.544,
+     "lo": 0.4748,
+     "hi": 0.6059,
+     "f_eff": 0.75,
+     "n_cheat_games": 75
+    },
+    {
+     "f": 1.0,
+     "k": 1,
+     "auc": 0.5055,
+     "lo": 0.492,
+     "hi": 0.524,
+     "f_eff": 1.0,
+     "n_cheat_games": 1
+    },
+    {
+     "f": 1.0,
+     "k": 5,
+     "auc": 0.5099,
+     "lo": 0.4911,
+     "hi": 0.541,
+     "f_eff": 1.0,
+     "n_cheat_games": 5
+    },
+    {
+     "f": 1.0,
+     "k": 10,
+     "auc": 0.5247,
+     "lo": 0.4916,
+     "hi": 0.5525,
+     "f_eff": 1.0,
+     "n_cheat_games": 10
+    },
+    {
+     "f": 1.0,
+     "k": 20,
+     "auc": 0.5268,
+     "lo": 0.4917,
+     "hi": 0.571,
+     "f_eff": 1.0,
+     "n_cheat_games": 20
+    },
+    {
+     "f": 1.0,
+     "k": 50,
+     "auc": 0.5458,
+     "lo": 0.49,
+     "hi": 0.5984,
+     "f_eff": 1.0,
+     "n_cheat_games": 50
+    },
+    {
+     "f": 1.0,
+     "k": 100,
+     "auc": 0.5585,
+     "lo": 0.491,
+     "hi": 0.6265,
+     "f_eff": 1.0,
+     "n_cheat_games": 100
+    }
+   ]
+  },
+  "seed": 20260915,
+  "bootstrap_reps": 200,
+  "players_per_cheater_cell": 500,
+  "players_per_clean_band": 1000,
+  "condition": "withheld_band",
+  "f1_check": {
+   "A0": {
+    "k1_mean": {
+     "mixed_f1": 0.66029045,
+     "published": 0.642863575,
+     "abs_diff": 0.017426874999999953
+    },
+    "k1_max": {
+     "mixed_f1": 0.66029045,
+     "published": 0.642863575,
+     "abs_diff": 0.017426874999999953
+    },
+    "k5_mean": {
+     "mixed_f1": 0.74856805,
+     "published": 0.7550194,
+     "abs_diff": 0.006451349999999967
+    },
+    "k5_max": {
+     "mixed_f1": 0.700277075,
+     "published": 0.703106775,
+     "abs_diff": 0.002829699999999935
+    },
+    "k10_mean": {
+     "mixed_f1": 0.7908412,
+     "published": 0.7927838,
+     "abs_diff": 0.0019426000000000165
+    },
+    "k10_max": {
+     "mixed_f1": 0.71926595,
+     "published": 0.718937775,
+     "abs_diff": 0.00032817500000004163
+    },
+    "k20_mean": {
+     "mixed_f1": 0.8171999999999999,
+     "published": 0.8251959999999998,
+     "abs_diff": 0.007995999999999892
+    },
+    "k20_max": {
+     "mixed_f1": 0.7205761749999999,
+     "published": 0.725264925,
+     "abs_diff": 0.004688750000000019
+    }
+   },
+   "S_att": {
+    "k1_mean": {
+     "mixed_f1": 0.5054699500000001,
+     "published": 0.511021125,
+     "abs_diff": 0.005551174999999908
+    },
+    "k1_max": {
+     "mixed_f1": 0.5054699500000001,
+     "published": 0.511021125,
+     "abs_diff": 0.005551174999999908
+    },
+    "k5_mean": {
+     "mixed_f1": 0.50987235,
+     "published": 0.522599,
+     "abs_diff": 0.012726650000000062
+    },
+    "k5_max": {
+     "mixed_f1": 0.4980328,
+     "published": 0.515990775,
+     "abs_diff": 0.017957975000000015
+    },
+    "k10_mean": {
+     "mixed_f1": 0.5247356,
+     "published": 0.527238,
+     "abs_diff": 0.0025024000000000157
+    },
+    "k10_max": {
+     "mixed_f1": 0.50272585,
+     "published": 0.5065521749999999,
+     "abs_diff": 0.0038263249999999083
+    },
+    "k20_mean": {
+     "mixed_f1": 0.5267581,
+     "published": 0.5353331,
+     "abs_diff": 0.008575
+    },
+    "k20_max": {
+     "mixed_f1": 0.510799075,
+     "published": 0.5142541,
+     "abs_diff": 0.003455025000000056
+    }
+   },
+   "A3g": {
+    "k1_mean": {
+     "mixed_f1": 0.7087544,
+     "published": 0.69610195,
+     "abs_diff": 0.012652450000000037
+    },
+    "k1_max": {
+     "mixed_f1": 0.7087544,
+     "published": 0.69610195,
+     "abs_diff": 0.012652450000000037
+    },
+    "k5_mean": {
+     "mixed_f1": 0.7995585,
+     "published": 0.80641095,
+     "abs_diff": 0.00685245000000001
+    },
+    "k5_max": {
+     "mixed_f1": 0.744770175,
+     "published": 0.75338095,
+     "abs_diff": 0.00861077500000007
+    },
+    "k10_mean": {
+     "mixed_f1": 0.8324743000000001,
+     "published": 0.8367496000000001,
+     "abs_diff": 0.004275299999999982
+    },
+    "k10_max": {
+     "mixed_f1": 0.7624844,
+     "published": 0.7643417499999999,
+     "abs_diff": 0.0018573499999999799
+    },
+    "k20_mean": {
+     "mixed_f1": 0.8538592,
+     "published": 0.8620592499999999,
+     "abs_diff": 0.008200049999999903
+    },
+    "k20_max": {
+     "mixed_f1": 0.770051525,
+     "published": 0.772191875,
+     "abs_diff": 0.002140350000000013
+    },
+    "k50_mean": {
+     "mixed_f1": 0.8880072999999999,
+     "published": 0.8934159000000002,
+     "abs_diff": 0.005408600000000208
+    },
+    "k50_max": {
+     "mixed_f1": 0.7844716999999999,
+     "published": 0.7839183000000001,
+     "abs_diff": 0.0005533999999998152
+    },
+    "k100_mean": {
+     "mixed_f1": 0.91364135,
+     "published": 0.9154576999999999,
+     "abs_diff": 0.001816349999999911
+    },
+    "k100_max": {
+     "mixed_f1": 0.7887359,
+     "published": 0.7862488750000001,
+     "abs_diff": 0.002487024999999976
+    }
+   },
+   "note": "k<=20 values from this script's own kmax=100 draw will not be bit-exact to the published kmax=20 (A0) run: np.argpartition's first-k slots are the k smallest keys but are not internally sorted, so a kmax=100 draw's first-20 columns are not guaranteed to be the same 20 players as a kmax=20 draw. Agreement is judged by falling inside the published CI, not by exact equality."
+  },
+  "post_hoc": "Post hoc check on synthetic players, run after the pre-registered A1/A3g player-level results were already reported. Not a pre-registered arm; treat as exploratory."
+ },
+ "mixed_cheater_note": "A player's hand is built as a mix: a share f of their games come from a substituted cell and the rest are that player's own clean games, scored against the same clean players throughout. Withheld Maia bands, mean aggregation.",
+ "mixed_cheater_rounding": "The number of cheating games in a hand is rounded up to at least one, so a player who cheats at all cheats at least once. At one game checked every share collapses to a fully cheated hand, and at five games the 10 and 25 percent shares both round to one game in five. That is why the curves dip from one game to five rather than rising.",
+ "difficulty": [
+  {
+   "title": "Rare engine moves",
+   "text": "At 2 to 5 percent of moves replaced, single-game AUC was 0.539 to 0.606, close to a coin flip."
+  },
+  {
+   "title": "Part-time cheating",
+   "text": "Honest games dilute a player's average. Measured: a player cheating in a quarter of their games reaches 0.699 at twenty games, against 0.854 for one who always cheats."
+  },
+  {
+   "title": "Strong honest players",
+   "text": "Pooling a clean but stronger player's games raised the strength check from 0.546 at one game to 0.658 at 20 and 0.820 at 100."
+  }
+ ],
+ "mean_vs_max": "Taking a player's worst game instead of their average was lower in every group beyond one game: 0.772 against 0.862 at 20 games on withheld bands."
+}

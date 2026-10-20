@@ -1,0 +1,92 @@
+{
+ "what": "Test MAE broken out by time control and by rating bracket, against the study's factor-of-two threshold.",
+ "sources": [
+  "analysis/heldout_test_eval/{baseline,attn_tuned}__best.json",
+  "analysis/heldout_test_eval/{baseline,attn_tuned}__best__rating_buckets.json",
+  "CCS Thesis - Integrated/chapters/chapter4.tex (subgroup performance by time control; by rating bracket)"
+ ],
+ "threshold_note": "The study set the threshold that no subgroup exceeds twice the overall MAE.",
+ "overall": {
+  "baseline": 175.0,
+  "full_model": 171.92
+ },
+ "by_time_control": [
+  {
+   "name": "ultrabullet",
+   "subset_50k": 214.8,
+   "baseline": 176.37,
+   "full_model": 174.98,
+   "n": 3127
+  },
+  {
+   "name": "bullet",
+   "subset_50k": 264.2,
+   "baseline": 174.84,
+   "full_model": 171.1,
+   "n": 90614
+  },
+  {
+   "name": "blitz",
+   "subset_50k": 239.5,
+   "baseline": 172.22,
+   "full_model": 170.29,
+   "n": 121770
+  },
+  {
+   "name": "rapid",
+   "subset_50k": 239.9,
+   "baseline": 185.96,
+   "full_model": 180.27,
+   "n": 36370
+  },
+  {
+   "name": "classical",
+   "subset_50k": 239.5,
+   "baseline": 159.0,
+   "full_model": 158.83,
+   "n": 3119
+  }
+ ],
+ "by_rating_bracket": [
+  {
+   "name": "0-1200",
+   "baseline": 208.86,
+   "full_model": 220.2,
+   "n": 66907
+  },
+  {
+   "name": "1201-1600",
+   "baseline": 161.59,
+   "full_model": 156.41,
+   "n": 164026
+  },
+  {
+   "name": "1601-2000",
+   "baseline": 155.1,
+   "full_model": 147.52,
+   "n": 192366
+  },
+  {
+   "name": "2001-2400",
+   "baseline": 202.44,
+   "full_model": 202.54,
+   "n": 77582
+  },
+  {
+   "name": "2401+",
+   "baseline": 354.27,
+   "full_model": 350.62,
+   "n": 9119
+  }
+ ],
+ "time_control_bounds": {
+  "ultrabullet": "under 29 s",
+  "bullet": "under 179 s",
+  "blitz": "under 479 s",
+  "rapid": "under 1499 s",
+  "classical": "1500 s and above"
+ },
+ "counting_note": "A rating bracket counts each side of a game as its own sample under its own bracket, so the bracket counts sum to 510,000 while the time-control counts sum to 255,000 games.",
+ "subset_note": "The 50k-subset column is the baseline-reproduction sanity gate and is a pipeline reference point only, not comparable with the full-corpus arms.",
+ "breaches": "Only the 2401+ bracket breaches the threshold, and narrowly: 350.62 / 171.92 = 2.04 for the full model and 354.27 / 175.00 = 2.02 for the reproduced baseline."
+}

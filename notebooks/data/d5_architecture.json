@@ -1,0 +1,138 @@
+{
+ "what": "The four stages of the network, with the tensor shapes a real forward pass produced for a 40-ply game.",
+ "sources": [
+  "prototype/src/chess_rating_net.py",
+  "analysis/heldout_test_eval/attn_tuned__best.json (arch_params)"
+ ],
+ "arch_params": {
+  "train_batch_size": 32,
+  "val_batch_size": 512,
+  "num_workers": 8,
+  "learning_rate": 0.0003,
+  "weight_decay": 1e-05,
+  "epochs": 60,
+  "optimizer": "Adam",
+  "patience": 5,
+  "lr_factor": 0.5,
+  "conv_filters": 32,
+  "lstm_layers": 3,
+  "bidirectional": true,
+  "dropout_rate": 0.5,
+  "lstm_h": 64,
+  "fc1_h": 32,
+  "use_attention": true,
+  "attention_type": "bahdanau",
+  "attention_dim": 64,
+  "use_anomaly": false,
+  "dense_supervision": false,
+  "seed": 0,
+  "split_seed": 42,
+  "ratings_mean": 1514,
+  "ratings_std": 366
+ },
+ "example_sequence_length": 40,
+ "shapes": {
+  "input_positions": [
+   1,
+   40,
+   12,
+   8,
+   8
+  ],
+  "input_clocks": [
+   1,
+   40
+  ],
+  "conv1": [
+   40,
+   32,
+   8,
+   8
+  ],
+  "conv2": [
+   40,
+   64,
+   4,
+   4
+  ],
+  "conv3": [
+   40,
+   128,
+   2,
+   2
+  ],
+  "conv4": [
+   40,
+   256,
+   1,
+   1
+  ],
+  "fc1": [
+   1,
+   40,
+   32
+  ],
+  "fc2": [
+   1,
+   40,
+   2
+  ],
+  "attention_weights": [
+   1,
+   40
+  ],
+  "per_move_preds": [
+   1,
+   40,
+   2
+  ]
+ },
+ "n_parameters": {
+  "cnn": 391968,
+  "lstm": 364032,
+  "attention": 16448,
+  "rating_head": 4194,
+  "total": 776642
+ },
+ "stages": [
+  {
+   "id": "cnn",
+   "name": "Convolutional trunk",
+   "role": "Turns one board into a position vector.",
+   "detail": "Four convolution and batch-norm blocks with leaky ReLU and average pooling, run on every ply of the game at once. The board arrives as 12 planes of 8 by 8, one plane per piece type and color, and leaves as a 256-number summary.",
+   "in": "1 x 40 x 12 x 8 x 8",
+   "out": "1 x 40 x 256"
+  },
+  {
+   "id": "lstm",
+   "name": "Bidirectional LSTM",
+   "role": "Reads the game as a sequence.",
+   "detail": "Three stacked bidirectional LSTM layers of hidden size 64. Each ply's input is the 256-number position summary with the standardized clock reading appended, so the input width is 257 and the output is 128, the two directions concatenated.",
+   "in": "1 x 40 x 257",
+   "out": "1 x 40 x 128"
+  },
+  {
+   "id": "attention",
+   "name": "Causal-cumulative attention",
+   "role": "Lets each move weight the moves before it.",
+   "detail": "Additive Bahdanau attention of dimension 64 over the LSTM output, masked so ply t attends only to plies 1 to t. Its context is added back to the LSTM output as a residual, so with attention switched off the forward pass is the baseline exactly. The per-ply weight the diagrams show is the mean weight each ply receives across all query positions.",
+   "in": "1 x 40 x 128",
+   "out": "1 x 40 x 128 context, 1 x 40 weights"
+  },
+  {
+   "id": "head",
+   "name": "Rating head",
+   "role": "Produces two rating numbers per move.",
+   "detail": "A 128 to 32 linear layer with leaky ReLU and dropout, then a 32 to 2 linear layer. That last layer is the only place in the whole network where White and Black are separated, which is why the two estimates come out nearly identical.",
+   "in": "1 x 40 x 128",
+   "out": "1 x 40 x 2"
+  }
+ ],
+ "normalization": {
+  "ratings_mean": 1514,
+  "ratings_std": 366,
+  "clocks_mean": 273,
+  "clocks_std": 380,
+  "source": "prototype/src/chess_rating_net.py (ChessGamesDataset defaults)"
+ }
+}

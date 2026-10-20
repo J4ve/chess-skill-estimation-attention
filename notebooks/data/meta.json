@@ -1,0 +1,32 @@
+{
+ "what": "Provenance for every data file the interactive notebook reads.",
+ "built": "2026-10-12",
+ "builder": "presentation/build_data.py",
+ "stages_built": {
+  "d2": "2026-09-28",
+  "d3": "2026-09-28",
+  "d7": "2026-09-28",
+  "d9": "2026-10-12",
+  "d10": "2026-10-12",
+  "d5": "2026-09-28",
+  "d8": "2026-09-28",
+  "d1": "2026-09-28",
+  "d6": "2026-09-28",
+  "d12": "2026-10-12",
+  "d11": "2026-10-12"
+ },
+ "rule": "Every number in the notebook traces to a file in this repository. The manuscript is authoritative where a source disagrees with it.",
+ "files": {
+  "d1_games.json": "one bundled game scored ply by ply",
+  "d2_anomaly.json": "anomaly detection results and the toy bell-curve parameters",
+  "d3_corpus.json": "corpus composition, sampling and split",
+  "d5_architecture.json": "network stages and real tensor shapes",
+  "d6_bootstrap.json": "paired bootstrap draws and arm results",
+  "d7_subgroups.json": "MAE by time control and rating bracket",
+  "d8_side_gap.json": "real against predicted rating gap",
+  "d9_sweep.json": "the one-factor-at-a-time tuning sweep",
+  "d10_latency.json": "per-move inference latency",
+  "d11_arms.json": "every deck game read under each rating arm",
+  "d12_separation.json": "White/Black separation by real rating gap"
+ }
+}

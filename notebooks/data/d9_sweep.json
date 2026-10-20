@@ -1,0 +1,142 @@
+{
+ "what": "The one-factor-at-a-time sweep: 17 runs, each moving one hyperparameter around a fixed control configuration.",
+ "sources": [
+  "CCS Thesis - Integrated/chapters/appendix.tex:460 (one-factor-at-a-time sweep)"
+ ],
+ "metric": "Best-validation loss in rating points on the 170,000-game subset. These are not the full-corpus test MAE values reported elsewhere.",
+ "rows": [
+  {
+   "factor": "Patience",
+   "value": "5 (control)",
+   "is_control": true,
+   "best_val": 223.03,
+   "terminal": 230.8
+  },
+  {
+   "factor": "Patience",
+   "value": "10",
+   "is_control": false,
+   "best_val": 225.09,
+   "terminal": 230.64
+  },
+  {
+   "factor": "Patience",
+   "value": "none",
+   "is_control": false,
+   "best_val": 223.34,
+   "terminal": 238.36
+  },
+  {
+   "factor": "Weight decay",
+   "value": "1e-5 (control)",
+   "is_control": true,
+   "best_val": 223.52,
+   "terminal": 231.88
+  },
+  {
+   "factor": "Weight decay",
+   "value": "1e-3",
+   "is_control": false,
+   "best_val": 223.02,
+   "terminal": 231.58
+  },
+  {
+   "factor": "Weight decay",
+   "value": "1e-2",
+   "is_control": false,
+   "best_val": 223.76,
+   "terminal": 228.91
+  },
+  {
+   "factor": "Learning rate",
+   "value": "5e-5",
+   "is_control": false,
+   "best_val": 231.75,
+   "terminal": 234.7
+  },
+  {
+   "factor": "Learning rate",
+   "value": "1e-4 (control)",
+   "is_control": true,
+   "best_val": 223.33,
+   "terminal": 229.67
+  },
+  {
+   "factor": "Learning rate",
+   "value": "3e-4",
+   "is_control": false,
+   "best_val": 211.72,
+   "terminal": 218.5
+  },
+  {
+   "factor": "Batch size",
+   "value": "32 (control)",
+   "is_control": true,
+   "best_val": 223.21,
+   "terminal": 230.59
+  },
+  {
+   "factor": "Batch size",
+   "value": "64",
+   "is_control": false,
+   "best_val": 226.19,
+   "terminal": 231.83
+  },
+  {
+   "factor": "Batch size",
+   "value": "128",
+   "is_control": false,
+   "best_val": 228.5,
+   "terminal": 233.45
+  },
+  {
+   "factor": "Dropout",
+   "value": "0.3",
+   "is_control": false,
+   "best_val": 226.01,
+   "terminal": 233.28
+  },
+  {
+   "factor": "Dropout",
+   "value": "0.5 (control)",
+   "is_control": true,
+   "best_val": 222.31,
+   "terminal": 231.67
+  },
+  {
+   "factor": "Attention dimension",
+   "value": "32",
+   "is_control": false,
+   "best_val": 223.69,
+   "terminal": 231.96
+  },
+  {
+   "factor": "Attention dimension",
+   "value": "64 (control)",
+   "is_control": true,
+   "best_val": 223.75,
+   "terminal": 232.24
+  },
+  {
+   "factor": "Attention dimension",
+   "value": "128",
+   "is_control": false,
+   "best_val": 224.75,
+   "terminal": 237.13
+  }
+ ],
+ "control_band": {
+  "lo": 222.31,
+  "hi": 223.75,
+  "mean": 223.19,
+  "n": 6
+ },
+ "adopted": {
+  "factor": "Learning rate",
+  "value": "3e-4",
+  "best_val": 211.72,
+  "five_seed_mean": 213.23,
+  "five_seed_sd": 0.78,
+  "note": "The adopted setting was re-run across five training seeds on the same subset for 213.23 plus or minus 0.78, and every seed landed above the single-run 211.72, so the five-seed mean is the confirmed figure."
+ }
+}
