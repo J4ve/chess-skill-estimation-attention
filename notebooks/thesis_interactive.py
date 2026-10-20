@@ -49,6 +49,14 @@ def _(alt, json, mo, urllib):
         "main/notebooks/data/"
     )
 
+    def fetch_text(url):
+        """Fetch a URL as text, in a normal Python or in the browser (Pyodide)."""
+        try:
+            from pyodide.http import open_url
+        except ImportError:
+            return urllib.request.urlopen(url).read().decode()
+        return open_url(url).read()
+
     def load(name):
         """Read one precomputed data file.
 
@@ -60,19 +68,22 @@ def _(alt, json, mo, urllib):
         symbolic link to ``data``, so a checkout that cannot create symbolic
         links still works.
         """
-        location = mo.notebook_location()
-        if hasattr(location, "read_text"):
+        try:
+            location = mo.notebook_location()
+        except Exception:
+            location = None
+        if location is not None and hasattr(location, "read_text"):
             local = location / "data" / name
             if local.exists():
                 return json.loads(local.read_text())
-            # A notebook mirrored on its own (molab, a single downloaded file)
-            # has no data folder beside it, so read the copy published here.
-            return json.loads(
-                urllib.request.urlopen(RAW_DATA_URL + name).read().decode()
-            )
-        return json.loads(
-            urllib.request.urlopen(str(location / "public" / name)).read().decode()
-        )
+        elif location is not None:
+            try:
+                return json.loads(fetch_text(str(location / "public" / name)))
+            except Exception:
+                pass
+        # A notebook mirrored on its own (molab, a single downloaded file)
+        # has no data folder beside it, so read the copy published here.
+        return json.loads(fetch_text(RAW_DATA_URL + name))
 
     # Categorical slots from the project's validated palette, assigned by
     # entity and never cycled.
