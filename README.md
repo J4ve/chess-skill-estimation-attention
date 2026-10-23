@@ -100,6 +100,21 @@ The same view in dark theme, and the sample-game picker:
 
   ![Play mode, mid-game](docs/screenshots/play-mode.png)
 
+## Results
+
+The served attention model cut test MAE on the 255,000 held-out games from
+175.00 (baseline) to 171.92 rating points ([results file](analysis/heldout-test-eval-results.md)).
+
+| Arm | Test MAE |
+| --- | --- |
+| Reproduced baseline (no attention) | 175.00 |
+| Baseline, learning rate 3e-4 (control) | 173.55 |
+| **Attention, learning rate 3e-4 (served)** | **171.92** |
+
+The 3.08-point drop has a paired bootstrap 95% CI of [-3.41, -2.76]. Attention
+also beats the control by 1.63 (95% CI [-1.94, -1.32]), so the gain is not only
+the learning rate. See [Reproducing a reported number](#reproducing-a-reported-number).
+
 ## Quick start (web prototype, local machine)
 
 PyTorch needs Python 3.12 or 3.13. A venv outside the repo keeps its
